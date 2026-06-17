@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>BOOKISHNESS</title>
+<meta name="description" content="Measuring equipment for true emotional readings, by OKOK Services.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ffffff'/%3E%3Cg fill='none' stroke='%23231f20' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M16 7 C12 5 8 5 5 6 L5 25 C8 24 12 24 16 26 C20 24 24 24 27 25 L27 6 C24 5 20 5 16 7 Z'/%3E%3Cline x1='16' y1='7' x2='16' y2='26'/%3E%3C/g%3E%3C/svg%3E">
+<!--
+  OKOK-METER /002 format — main page for screen-book.
+  Layout/chrome built from okok-meter-002-format.md (full-screen 3D viewer +
+  receipt/mono UI + pink dev-grid + nav panel + typing chat + About overlay).
+  The 3D model is the real ../models/box.glb (GLTFLoader), reusing the
+  environment / lighting / lid-open interaction from the root screen-book viewer.
+-->
+<style>
+  :root{
+    --ink:#231f20; --bg:#ffffff; --pink:#ff5bd1;
+    --hi:#eaff70; --teal:#19b5a6; --yellow:#f4e019;
+    /* fluid layout padding — floored + capped so it scales but never collapses */
+    --pad: clamp(14px, 1.6vw, 30px);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;width:100%;height:100%;min-height:100%;
+    -moz-osx-font-smoothing:grayscale;-webkit-font-smoothing:antialiased}
+  body{
+    background:var(--bg); color:var(--ink); overflow:hidden;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    /* fluid base type: scales with width but bounded 12–19px */
+    font-size:clamp(12px, 1.05vw, 19px); line-height:1.2; letter-spacing:.02em;
+  }
+  button{border:none;background:0 0;color:inherit;font:inherit;cursor:pointer;
+    padding:0;letter-spacing:inherit;text-transform:inherit}
+  .pill{border:1px solid var(--ink);border-radius:999px;padding:.15em .6em;white-space:nowrap}
+
+  /* 3D layer — transparent canvas so the dev-grid shows through behind the model */
+  #scene{position:fixed;inset:0;z-index:2;display:block}
+
+  /* dev-grid (decorative) — sits BEHIND the model (z-index 1 < canvas 2) */
+  .dev-grid{position:fixed;inset:0;z-index:1;pointer-events:none}
+  /* grid-inner spans the FULL screen; 2 vertical + 2 horizontal lines split it into 3×3 = 9 cells */
+  .grid-inner{position:absolute;inset:0}
+  .gline{position:absolute;background:#dcdcdc;opacity:1}
+  .gv{top:0;bottom:0;width:1px;transform:translateX(-.5px)}
+  .gh{left:0;right:0;height:1px;transform:translateY(-.5px)}
+  .gv1{left:33.333%}.gv2{left:66.667%}.gh1{top:33.333%}.gh2{top:66.667%}
+
+  /* UI layer */
+  .ui{position:fixed;inset:0;z-index:10;pointer-events:none}
+  .ui > *{pointer-events:auto}
+
+  /* ---- minimal footer (newpoetics-style) ----
+     collapsed = one centered line · hover = HOW IT WORKS / ABOUT stack below it
+     · click a section = footer rises to 1/3 viewport with a scrollable panel */
+  .site-footer{position:fixed;left:0;right:0;bottom:0;z-index:10;
+    background:var(--bg);border-top:1px solid var(--ink);
+    display:flex;flex-direction:column;
+    font-size:clamp(11px,.85vw,15px);letter-spacing:.06em}
+  .site-footer.open{height:33vh}
+  .foot-bar{padding:.75em var(--pad);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* HOW IT WORKS / INTRODUCTION — hidden until hover/open. Each is a full-width cell
+     separated by dividers; hovering a cell fills its whole region (no underline). */
+  .foot-links{display:none;flex-direction:column;border-top:1px solid var(--ink)}
+  .site-footer:hover .foot-links,.site-footer.open .foot-links{display:flex}
+  .foot-link{font:inherit;letter-spacing:inherit;cursor:pointer;width:100%;
+    text-align:center;padding:.7em var(--pad);transition:background .15s}
+  .foot-link + .foot-link{border-top:1px solid var(--ink)}
+  .foot-link:hover,.foot-link.active{background:#ededed}
+  /* scrollable content panel — only while open, fills the rest of the 1/3 height */
+  .foot-panel{display:none}
+  .site-footer.open .foot-panel{display:block;flex:1 1 auto;min-height:0;overflow-y:auto;
+    border-top:1px solid var(--ink);padding:1.2em var(--pad);text-align:left;line-height:1.7}
+  .foot-content{max-width:680px;margin:0 auto;opacity:.85}
+  .foot-content h3{font-size:clamp(13px,1vw,18px);letter-spacing:.1em;margin:0 0 .9em}
+  .foot-content p{margin:0 0 1em}
+  .foot-content .by{border:1px solid var(--ink);border-radius:999px;padding:.05em .5em}
+  .foot-content ol{margin:0 0 1em 1.3em;padding:0}
+  .foot-content li{margin:0 0 .55em;line-height:1.6}
+  /* copyright — shown only while a section is open, pinned at the bottom, centered */
+  .foot-copy{display:none}
+  .site-footer.open .foot-copy{display:block;text-align:center;border-top:1px solid var(--ink);
+    padding:.75em var(--pad);font-size:clamp(9px,.7vw,12px);opacity:.5;letter-spacing:.06em}
+
+  #loader{position:fixed;inset:0;z-index:40;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;font-size:clamp(13px,1vw,18px);transition:opacity .6s}
+  #loader.gone{opacity:0;pointer-events:none}
+
+  /* ---- phone: footer panel can take a little more height ---- */
+  @media (max-width:560px){
+    .site-footer.open{height:42vh}
+  }
+
+</style>
+</head>
+<body class="muted">
+
+  <canvas id="scene"></canvas>
+
+  <div class="dev-grid" aria-hidden="true">
+    <div class="grid-inner">
+      <div class="gline gv gv1"></div><div class="gline gv gv2"></div>
+      <div class="gline gh gh1"></div><div class="gline gh gh2"></div>
+    </div>
+  </div>
+
+  <footer class="site-footer" id="site-footer">
+    <div class="foot-bar">BOOKISHNESS /// 100 EXPERIMENTS IN READING ON SCREEN</div>
+    <nav class="foot-links">
+      <button class="foot-link" data-sec="how">HOW IT WORKS</button>
+      <button class="foot-link" data-sec="intro">INTRODUCTION</button>
+    </nav>
+    <div class="foot-panel">
+      <div class="foot-content" id="foot-content"></div>
+    </div>
+    <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
+  </footer>
+
+  <div id="loader">LOADING BOOKISHNESS …</div>
+
+
+<script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+  import * as THREE from "three";
+  import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+  import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+  import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+  import { EXRLoader } from "three/addons/loaders/EXRLoader.js";
+
+  /* ---------- CONFIG ---------- */
+  const CONFIG = {
+    modelURL: "../models/box2.glb",                 // parts-removed box (untextured)
+    lidOpenAngle: THREE.MathUtils.degToRad(110),    // matches root viewer
+    // Apply the PBR maps in code (GLB is exported untextured from C4D).
+    // Set applyTextures:false if a future GLB already has baked textures.
+    applyTextures: true,
+    textures: {
+      base:   "../textures-source/skybluebox_material_baseColor.png",                 // sRGB color
+      normal: "../textures-source/skybluebox_material_Normal_OpenGL.png",             // OpenGL (Y+) normal
+      orm:    "../textures-source/skybluebox_material_occlusionRoughnessMetallic.png",// R=AO, G=Rough, B=Metal
+    },
+  };
+
+  /* ---------- renderer / scene / camera ---------- */
+  const canvas = document.getElementById("scene");
+  // logarithmicDepthBuffer: keeps depth precision across the wide near/far range so
+  // close, overlapping faces (the ant's legs/body, or anything touching the box wall)
+  // don't shimmer / z-fight ("지직지직").
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, logarithmicDepthBuffer: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);              // transparent — page bg + grid show through
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.35;              // nudged up toward the Painter viewport brightness
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  scene.background = null;                           // transparent so the CSS dev-grid sits behind the model
+
+  const camera = new THREE.PerspectiveCamera(42, innerWidth/innerHeight, 0.1, 100);
+  camera.position.set(2.6, 2.2, 3.4);
+
+  const controls = new OrbitControls(camera, canvas);
+  controls.enableDamping = true; controls.dampingFactor = 0.07;
+  controls.enableZoom = false;                       // 스크롤/드래그 줌 직접 구현 (zoomSpeed 수식이 저속에서 수렴)
+  controls.minDistance = 1.6; controls.maxDistance = 8;
+  controls.maxPolarAngle = Math.PI * 0.52;
+  controls.target.set(0, 0.3, 0);
+
+  // 스크롤 줌 — deltaY 상한을 걸어서 빠른 스크롤도 폭발적으로 안 들어감
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const d = Math.max(-12, Math.min(12, e.deltaY));  // 속도 상한
+    const dist = camera.position.length();
+    const newDist = Math.max(controls.minDistance, Math.min(controls.maxDistance, dist * (1 + d * 0.0007)));
+    camera.position.setLength(newDist);
+  }, { passive: false });
+
+  // Alt + 우클릭 드래그 → 줌 (위로 = 줌인, 아래로 = 줌아웃)
+  let _altHeld = false, _altDragActive = false, _altDragLastY = 0;
+  window.addEventListener('keydown', e => {
+    if (e.key === 'Alt' && !_altHeld) {
+      _altHeld = true;
+      controls.mouseButtons.RIGHT = -1;  // OrbitControls 패닝 비활성화
+      e.preventDefault();
+    }
+  });
+  window.addEventListener('keyup', e => {
+    if (e.key === 'Alt') {
+      _altHeld = false; _altDragActive = false;
+      controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+    }
+  });
+  canvas.addEventListener('mousedown', e => {
+    if (e.button === 2 && _altHeld) { _altDragActive = true; _altDragLastY = e.clientY; }
+  });
+  window.addEventListener('mousemove', e => {
+    if (!_altDragActive) return;
+    const dy = e.clientY - _altDragLastY;
+    _altDragLastY = e.clientY;
+    const dist = camera.position.length();
+    const newDist = Math.max(controls.minDistance, Math.min(controls.maxDistance, dist * (1 + dy * 0.001)));
+    camera.position.setLength(newDist);
+    controls.update();
+  });
+  window.addEventListener('mouseup', e => { if (e.button === 2) _altDragActive = false; });
+
+  /* ---------- environment ----------
+     RoomEnvironment gives a studio-lit IBL so METALLIC materials actually
+     reflect something (a metal with no env map renders pure black — that's why
+     the silver glitter text was black). Reflections only; the page background
+     stays transparent so the CSS dev-grid still shows behind the model. */
+  // The loader overlay waits only for the things needed to show the CLOSED box well:
+  // box2.glb + its 3 PBR maps. The heavy stuff you don't see yet — the in-box items
+  // (drill/ants) and the reflection EXR — load OFF this manager, in the background,
+  // so the overlay hides ~3x sooner instead of waiting on ~64MB.
+  const manager = new THREE.LoadingManager();
+  manager.onLoad = () => document.getElementById("loader").classList.add("gone");
+
+  const pmrem = new THREE.PMREMGenerator(renderer);
+  // instant fallback so metals aren't black while the EXR streams in
+  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  // Substance Painter's default "Tomoco Studio" env — refines reflections once it
+  // arrives. OFF the manager: the RoomEnvironment fallback above already prevents the
+  // black-metal flash, so there's no reason to make the user wait 7MB for it.
+  new EXRLoader().load("../hdri/studio_tomoco.exr", (tex) => {
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    scene.environment = pmrem.fromEquirectangular(tex).texture;
+    tex.dispose();
+  });
+
+  // EXR/IBL is the main light now — keep direct lights low so they don't pile on
+  const key = new THREE.DirectionalLight(0xfff8f0, 0.6); key.position.set(3,5,2); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xf0f4ff, 0.3); fill.position.set(-3,1,-2); scene.add(fill);
+
+  /* ---------- model (box.glb) + lid interaction ---------- */
+  let modelRoot = null, lidGroup = null, lidClosedRot = 0, isOpen = false, isAnimatingLid = false;
+  let baseY = 0, modelScaleUnit = 1;
+  const boxCenter = new THREE.Vector3(), boxSize = new THREE.Vector3();   // box extents in modelRoot-local space
+
+  // clickable items that live INSIDE the box (revealed when the lid opens)
+  let hoveredObj = null;
+  const loadedItems = [];                                 // { obj, page } once loaded + placed
+  // shift: position inside the box as a fraction of the free space on each axis
+  // (-1..1; ±1 = touching the wall, 0 = centered). Guarantees it never pokes out.
+  const ITEMS = [
+    { url: "../models/items/drill.glb", page: "../readings/drill/index.html", rawscale: 1.7, shift: { x: 0, z: -0.6 } },
+    { url: "../models/items/ants.glb",  page: "../readings/ants/index.html",  rawScale: 1.3, shift: { x: -0.2, z: 1, y: 0.3 } },
+    { url: "../models/items/flashlight.glb", page: "../readings/flashlight/index.html", rawScale: 1.1, shift: { x: 0.5, z: 0.7 } },
+    { url: "../models/items/touch.glb",      page: "../readings/feeling of touch/index.html", material: "slime", rawScale: 1.15, shift: { x: -0.6, y: 0.05, z: 0.7 }, bobUp: true },
+    // 카멜레온(모방/위장) → readings/imitation(모방 글). 손전등 위에 발을 얹은 채 얹힌다.
+    // restOn:"flashlight" → 바닥 안착 대신 flashlight 윗면에 안착. rot 으로 손전등을 잡는 자세,
+    // offset 으로 손전등 윗면 기준 미세 위치(박스 로컬 단위)를 잡는다. rot/offset 은 눈으로 보며 조정.
+    { url: "../models/items/imitation.glb", page: "../readings/imitation/index.html",
+      restOn: "flashlight", rawScale: 1.0,
+      rot: { x: 0.1, y: 2.26, z: 0 },        // 손전등 기둥에 발을 감고 머리를 든 자세(라디안)
+      offset: { x: -0.02, y: -0.02, z: 0 } }, // 손전등 윗면 중심 기준 미세 이동(박스 로컬 단위).
+      //  ↑ 혀·꼬리가 bbox를 키워 몸통이 옆/아래로 쏠리므로, y로 몸을 기둥 위로 올리고 x/z로 중심을 맞춤.
+    // 라이터 → readings/lighter. 박스 뒤-왼쪽 바닥에 세워 둔다. rawScale 생략 → 박스 안에 자동 맞춤.
+    { url: "../models/items/lighter.glb", page: "../readings/lighter/index.html", rawScale: 1.1, shift: { x: 0.1, z: -0.4 } },
+  ];
+
+  // FILL: how much of the viewport the model occupies. Smaller = bigger model.
+  const FILL = 1.4;
+  let fitRadius = 0;
+
+  // distance needed to fit the model into the *narrower* of the two FOVs,
+  // so it stays fully framed in both landscape and portrait viewports
+  function fitDistance(){
+    const vFov = camera.fov * Math.PI/180;
+    const hFov = 2 * Math.atan(Math.tan(vFov/2) * camera.aspect);
+    return (fitRadius / Math.sin(Math.min(vFov, hFov)/2)) * FILL;
+  }
+
+  // Preload the PBR maps NOW (queued on the manager up-front) so the loader
+  // overlay can't hide before they start. Textures exported alongside a glTF use
+  // flipY=false, so we match that for the new GLB's UVs.
+  const ENV_INTENSITY = 1.35;                         // brighter metal reflection → silver closer to Painter
+  const MAPS = (() => {
+    if (!CONFIG.applyTextures) return null;
+    const loader = new THREE.TextureLoader(manager);
+    const load = (url, srgb) => {
+      const t = loader.load(url);
+      t.flipY = false;
+      t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+      t.anisotropy = 8;
+      return t;
+    };
+    return {
+      map:    load(CONFIG.textures.base, true),
+      normal: load(CONFIG.textures.normal, false),
+      orm:    load(CONFIG.textures.orm, false),       // one map → ao/rough/metal channels
+    };
+  })();
+
+  function applyTextures(root){
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      // aoMap needs a 2nd UV set in three r160; reuse uv if the GLB has only one
+      const g = o.geometry;
+      if (g.attributes.uv && !g.attributes.uv1) g.setAttribute("uv1", g.attributes.uv);
+      o.material = new THREE.MeshStandardMaterial({
+        map: MAPS.map, normalMap: MAPS.normal,
+        aoMap: MAPS.orm, roughnessMap: MAPS.orm, metalnessMap: MAPS.orm,
+        roughness: 1, metalness: 1,                   // maps drive the actual values
+        envMapIntensity: ENV_INTENSITY,
+      });
+    });
+  }
+
+  function registerModel(root){
+    modelRoot = root;
+    if (CONFIG.applyTextures) applyTextures(root);
+    // recenter the model on the origin so framing + float are predictable
+    const box = new THREE.Box3().setFromObject(root);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    root.position.sub(center);
+    baseY = root.position.y;
+    modelScaleUnit = Math.max(size.x, size.y, size.z);
+    // box extents in modelRoot-LOCAL space (float on the root doesn't affect children)
+    boxCenter.copy(center); boxSize.copy(size);
+    scene.add(root);
+
+    lidGroup = root.getObjectByName("lid");
+    if (lidGroup) lidClosedRot = lidGroup.rotation.z;
+
+    tryPlaceItems();   // place any items that already finished loading
+
+    // frame camera to the model's bounding sphere
+    fitRadius = 0.5 * Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
+    const dist = fitDistance();
+    const dir = new THREE.Vector3(0.55, 0.46, 0.71).normalize();   // front-right-above 3/4 view
+    camera.position.copy(dir.multiplyScalar(dist));
+    camera.near = dist/1000; camera.far = dist*100;   // tiny near so you can dolly right up to the ant
+    camera.updateProjectionMatrix();
+    controls.target.set(0, 0, 0);
+    controls.minDistance = dist*0.06; controls.maxDistance = dist*2.5;   // was 0.4 → can zoom in much closer to inspect the ant
+    controls.enablePan = true;                          // pan (right-drag / two-finger) to center on the ant, then zoom
+    controls.update();
+  }
+
+  const gltfLoader = new GLTFLoader(manager);
+  gltfLoader.load(
+    CONFIG.modelURL,
+    (gltf) => { registerModel(gltf.scene); },   // loader overlay hides via manager.onLoad (all assets ready)
+    undefined,
+    (err) => {
+      console.error("box2.glb load failed:", err);
+      document.getElementById("loader").textContent = "MODEL NOT FOUND — check ../models/box2.glb";
+    }
+  );
+
+  // load the in-box items (textured GLBs, self-contained) on a SEPARATE loader (no
+  // manager) → they download in the background while you look at the closed box, and
+  // don't hold up the loader overlay. They're only seen after the box opens anyway.
+  // Missing files are skipped quietly.
+  const itemLoader = new GLTFLoader();
+  ITEMS.forEach((it) => {
+    itemLoader.load(
+      it.url,
+      (gltf) => { loadedItems.push(Object.assign({ obj: gltf.scene }, it)); tryPlaceItems(); },
+      undefined,
+      (err) => console.warn("item load skipped:", it.url, err)
+    );
+  });
+
+  // Fit each item inside the box footprint (never poking out) and rest it on the
+  // floor. Items become children of modelRoot so they float WITH the box; the lid
+  // is a separate child, so opening the lid leaves the items in the base.
+  function tryPlaceItems(){
+    if (!modelRoot) return;
+    // repeat until no further progress: an item with restOn can only be placed once
+    // its target (e.g. the flashlight) has been placed, which may happen in this same pass.
+    let progressed = true;
+    while (progressed){
+      progressed = false;
+      loadedItems.forEach((it) => {
+        if (it._placed) return;
+        // items that perch ON another item must wait until that target is placed
+        let target = null;
+        if (it.restOn){
+          target = loadedItems.find(t => t._placed && t.placedCenter && (t.url||"").includes(it.restOn));
+          if (!target) return;                   // not ready — retry on a later pass/call
+        }
+        it._placed = true;
+        progressed = true;
+        const { obj: item, shift, scale: userScale, rawScale, rotY, rot, offset, material: matPreset, bobUp } = it;
+        const ib = new THREE.Box3().setFromObject(item);
+        const isz = ib.getSize(new THREE.Vector3());
+        const ic = ib.getCenter(new THREE.Vector3());
+        const margin = 0.62;                       // fraction of interior the item may fill
+        // rawScale: absolute scale bypassing auto-fit; scale: multiplier on top of auto-fit
+        const s = rawScale != null ? rawScale
+                  : Math.min(boxSize.x*margin/isz.x, boxSize.y*margin/isz.y, boxSize.z*margin/isz.z)
+                    * (userScale ?? 1);
+        item.scale.setScalar(s);
+
+        if (target){
+          // ---- perch ON the target item: foot rests on the target's top face ----
+          const tc = target.placedCenter, ts = target.placedSize;  // mesh-center + scaled size
+          const off = offset || {};
+          // desired mesh-center (box-local): centered over the target, lifted so the
+          // chameleon's bbox bottom meets the target top. offset nudges in box units.
+          // perch base = target's TOP-FACE CENTER. We do NOT auto-add the item's half
+          // height: the chameleon's long tongue/tail bloat its bbox, so bbox math floats
+          // the body off. Instead the pivot (mesh center) sits at the flashlight top and
+          // offset.y lifts the body onto it by eye.
+          const baseCx = tc.x, baseCy = tc.y + ts.y/2, baseCz = tc.z;  // offset=0 perch
+          const cx = baseCx + (off.x || 0);
+          const cy = baseCy + (off.y || 0);
+          const cz = baseCz + (off.z || 0);
+          // pivot rotates about the chameleon's OWN center so rot doesn't fling it away:
+          // put the mesh center at the pivot origin, rotate the pivot, then place the pivot.
+          item.position.set(-ic.x*s, -ic.y*s, -ic.z*s);
+          const pivot = new THREE.Group();
+          pivot.add(item);
+          pivot.rotation.set(rot?.x || 0, rot?.y ?? rotY ?? 0, rot?.z || 0);
+          pivot.position.set(cx, cy, cz);
+          modelRoot.add(pivot);
+          it.pivot = pivot;                               // for live tuning
+          it._pivotBaseY = cy;                            // base Y for follow-bob
+          it.perchBase = new THREE.Vector3(baseCx, baseCy, baseCz);
+        } else {
+          // ---- rest on the box floor (default) ----
+          const slackX = Math.max(0, (boxSize.x - isz.x*s) / 2);
+          const slackZ = Math.max(0, (boxSize.z - isz.z*s) / 2);
+          const slackY = Math.max(0, (boxSize.y - isz.y*s));   // floor→ceiling room
+          const sx = Math.max(-1, Math.min(1, shift?.x || 0));
+          const sz = Math.max(-1, Math.min(1, shift?.z || 0));
+          const sy = Math.max(0,  Math.min(1, shift?.y || 0)); // 0 = on floor, 1 = up at ceiling/window
+          const cyCenter = (boxCenter.y - boxSize.y/2) + isz.y*s*0.5 + boxSize.y*0.08 + slackY*sy; // mesh-center y
+          item.position.set(
+            boxCenter.x - ic.x*s + slackX*sx,
+            cyCenter - ic.y*s,
+            boxCenter.z - ic.z*s + slackZ*sz
+          );
+          if (rotY != null) item.rotation.y = rotY;
+          // record placed footprint (box-local mesh center + scaled size) so other
+          // items can perch on top of this one
+          it.placedCenter = new THREE.Vector3(boxCenter.x + slackX*sx, cyCenter, boxCenter.z + slackZ*sz);
+          it.placedSize = isz.clone().multiplyScalar(s);
+          modelRoot.add(item);
+        }
+
+        // sharpen the item's own textures at grazing angles (helps it read crisply
+        // instead of looking smeared/"깨진" when small or seen edge-on)
+        const maxAniso = renderer.capabilities.getMaxAnisotropy();
+        item.traverse((o) => {
+          if (!o.isMesh || !o.material) return;
+          for (const m of [].concat(o.material)) {
+            for (const k of ["map","normalMap","roughnessMap","metalnessMap","emissiveMap","aoMap"]) {
+              if (m[k]) { m[k].anisotropy = maxAniso; m[k].needsUpdate = true; }
+            }
+          }
+        });
+        if (matPreset === 'slime') {
+          const slime = new THREE.MeshStandardMaterial({
+            color: 0xd0a0f8,
+            roughness: 0.3,
+            metalness: 0.1,
+            envMapIntensity: 1.4,
+          });
+          item.traverse(o => { if (o.isMesh) o.material = slime; });
+        }
+        // remember resting pose + hover-bob amplitude for the hover float
+        item.userData.basePos = item.position.clone();
+        item.userData.baseRotY = item.rotation.y;
+        if (bobUp) item.userData.bobUp = true;
+        item.userData.bob = isz.y * s * 0.35;      // bob height when hovered (rel. to item size)
+        item.userData.hover = 0;                   // eased 0..1 hover amount
+        item.visible = true;                       // always visible, even when the box is closed
+      });
+    }
+  }
+
+  // raycast helper: returns the {obj,page} item under the pointer, or null
+  function pickItem(e){
+    pointer.x = (e.clientX/innerWidth)*2 - 1;
+    pointer.y = -(e.clientY/innerHeight)*2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    for (const it of loadedItems){
+      if (it.obj.visible && raycaster.intersectObject(it.obj, true).length > 0) return it;
+    }
+    return null;
+  }
+
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  // click vs drag: only act on a tap that barely moved, so orbiting never triggers it
+  let downX = 0, downY = 0, downT = 0;
+  canvas.addEventListener("pointerdown", (e) => { downX = e.clientX; downY = e.clientY; downT = performance.now(); });
+  canvas.addEventListener("pointerup", (e) => {
+    if (isAnimatingLid) return;
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 6 || performance.now() - downT > 500) return; // drag → ignore
+    const item = pickItem(e);                          // also primes the raycaster for this pointer
+    // items are only clickable once the box is open — otherwise a tap just opens the lid,
+    // so you can't jump to a reading before the box has actually opened.
+    if (isOpen && item) { window.location.href = item.page; return; }   // in-box item → go to its reading
+    if (lidGroup && raycaster.intersectObject(lidGroup, true).length > 0) toggleLid();
+  });
+  // pointer cursor when hovering a clickable in-box item
+  canvas.addEventListener("pointermove", (e) => {
+    const it = isOpen ? pickItem(e) : null;   // no hover/pointer on items while the box is closed
+    hoveredObj = it ? it.obj : null;
+    canvas.style.cursor = it ? "pointer" : "";
+  });
+
+  function toggleLid(){
+    if (isAnimatingLid) return;
+    isOpen = !isOpen;
+    isAnimatingLid = true;
+    const from = lidGroup.rotation.z;
+    const to = isOpen ? lidClosedRot + CONFIG.lidOpenAngle : lidClosedRot;
+    const dur = 850, t0 = performance.now();
+    (function step(now){
+      const k = Math.min((now - t0)/dur, 1), e = 1 - Math.pow(1 - k, 3);
+      lidGroup.rotation.z = from + (to - from)*e;
+      if (k < 1) requestAnimationFrame(step); else isAnimatingLid = false;
+    })(performance.now());
+  }
+
+  // Clicking an in-box item navigates away (window.location.href). Pressing the
+  // browser Back button restores THIS page from the bfcache exactly as it was —
+  // i.e. with the box still OPEN. Snap it back to the closed starting state so
+  // the reader always returns to a fresh, shut box.
+  function resetBox(){
+    if (!lidGroup) return;
+    isOpen = false;
+    isAnimatingLid = false;
+    lidGroup.rotation.z = lidClosedRot;
+    hoveredObj = null;
+  }
+  addEventListener("pageshow", (e) => {
+    if (e.persisted) {                                   // came back via Back/Forward (bfcache)
+      resetBox();
+      document.getElementById("loader")?.classList.add("gone");  // never leave the overlay stuck
+    }
+  });
+
+  addEventListener("resize", () => {
+    camera.aspect = innerWidth/innerHeight;
+    // re-fit the model so it stays framed at any viewport size/orientation
+    // (target is the origin, so setLength keeps the current orbit angle)
+    if (fitRadius) camera.position.setLength(fitDistance());
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  // subtle "floating in space" idle motion. Applied to the model root, so any
+  // objects placed inside the box later (clickable icon models) drift with it.
+  const clock = new THREE.Clock();
+  (function animate(){
+    requestAnimationFrame(animate);
+    const t = clock.getElapsedTime();
+    if (modelRoot){
+      modelRoot.position.y = baseY + Math.sin(t*0.6) * 0.03 * modelScaleUnit;  // gentle bob
+      modelRoot.rotation.y = Math.sin(t*0.25) * 0.08;              // slow yaw drift
+      modelRoot.rotation.z = Math.sin(t*0.4 + 1.0) * 0.02;         // tiny roll
+    }
+    // pass 1: floor items — update hover + record bobY so perch items can follow
+    loadedItems.forEach((it) => {
+      if (it.pivot || !it.obj.userData.basePos) return;
+      const obj = it.obj;
+      const want = (obj === hoveredObj) ? 1 : 0;
+      obj.userData.hover += (want - obj.userData.hover) * 0.12;
+      const h = obj.userData.hover;
+      obj.position.copy(obj.userData.basePos);
+      const bobVal = obj.userData.bobUp ? Math.abs(Math.sin(t*1.8)) : Math.sin(t*1.8);
+      const bobY = bobVal * obj.userData.bob * h;
+      obj.position.y += bobY;
+      it._currentBobY = bobY;
+      obj.rotation.y = (obj.userData.baseRotY || 0) + Math.sin(t*1.1) * 0.05 * h;
+    });
+    // pass 2: pivot items (restOn) — rise with target's bob + own hover on top
+    loadedItems.forEach((it) => {
+      if (!it.pivot || !it.obj.userData.basePos) return;
+      const obj = it.obj;
+      obj.position.copy(obj.userData.basePos);
+      const targetIt = it.restOn ? loadedItems.find(t => !t.pivot && (t.url||'').includes(it.restOn)) : null;
+      it.pivot.position.y = it._pivotBaseY + (targetIt?._currentBobY ?? 0);
+      const want = (obj === hoveredObj) ? 1 : 0;
+      obj.userData.hover += (want - obj.userData.hover) * 0.12;
+      const h = obj.userData.hover;
+      it.pivot.position.y += Math.sin(t*1.8) * obj.userData.bob * h;
+      obj.rotation.y = (obj.userData.baseRotY || 0) + Math.sin(t*1.1) * 0.05 * h;
+    });
+    controls.update();
+    renderer.render(scene, camera);
+  })();
+
+/* ---------- minimal footer: hover reveals the menu, click opens a 1/3-height scroll panel ---------- */
+  const footer = document.getElementById("site-footer");
+  const footContent = document.getElementById("foot-content");
+  const SECTIONS = {
+    how: `<h3>HOW IT WORKS</h3>
+      <p>BOOKISHNESS is a box. Inside it are objects — and each object is one of 100 experiments in what it means to read on a screen.</p>
+      <ol>
+        <li><b>Open the box.</b> Click the lid to lift it open. Click it again to close.</li>
+        <li><b>Look around.</b> Drag anywhere to orbit the box; scroll or pinch to zoom in and out.</li>
+        <li><b>Choose an object.</b> Objects rest inside the open box and lift slightly when you hover them. Click one to enter its reading.</li>
+        <li><b>Read it.</b> Every experiment asks you to read differently — turning, scrolling, dragging, holding, waiting. Follow the on-screen hint to begin.</li>
+        <li><b>Come back.</b> Inside any reading, use <span class="by">Back to Box</span> to return here and pick another.</li>
+      </ol>
+      <p>There is no fixed order and no end state. Open the box and start anywhere.</p>`,
+    intro: `<h3>INTRODUCTION</h3>
+      <p>BOOKISHNESS is 100 experiments in reading on screen — a box of reading gestures.</p>
+      <p>Reading on a screen is not the same as reading on paper. We scroll, swipe, zoom, search, wait for things to load, and lose our place when the page reflows. BOOKISHNESS collects these everyday gestures and turns each one into a small reading.</p>
+      <p>Open the box, look inside, and read.</p>`,
+  };
+  let openSec = null;
+  function openSection(sec){
+    if (openSec === sec){ closeFooter(); return; }            // clicking the active section again closes it
+    openSec = sec;
+    footContent.innerHTML = SECTIONS[sec] || "";
+    footer.classList.add("open");
+    footer.querySelectorAll(".foot-link").forEach(b => b.classList.toggle("active", b.dataset.sec === sec));
+  }
+  function closeFooter(){
+    openSec = null;
+    footer.classList.remove("open");
+    footer.querySelectorAll(".foot-link").forEach(b => b.classList.remove("active"));
+  }
+  footer.querySelectorAll(".foot-link").forEach(b =>
+    b.addEventListener("click", () => openSection(b.dataset.sec)));
+  addEventListener("keydown", e => { if (e.key === "Escape") closeFooter(); });
+
+</script>
+</body>
+</html>

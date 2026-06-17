@@ -1,0 +1,426 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>BOOKISHNESS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ffffff'/%3E%3Cg fill='none' stroke='%23231f20' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M16 7 C12 5 8 5 5 6 L5 25 C8 24 12 24 16 26 C20 24 24 24 27 25 L27 6 C24 5 20 5 16 7 Z'/%3E%3Cline x1='16' y1='7' x2='16' y2='26'/%3E%3C/g%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;700;800&display=swap" rel="stylesheet">
+
+<style>
+  /* ============================================================
+     스크린 책 100프로젝트 · 읽기방식: 손전등 책 (flashlight)
+     깜깜한 책상. 흰 종이들이 그림자 지고 겹쳐 쌓여 있고, 그 위에 글이 있다.
+     - 본문(McLuhan, 반사광/투과광)이 종이 위에 편지/논고처럼 얹혀 있다.
+       (레이아웃 레퍼런스: grafikdesigndenkensprechen.com — 회색 바닥 위 겹친 종이들)
+     - 캔버스가 그 위를 검게 덮는다. 포인터/손가락으로 비춘 곳만 종이가 드러난다.
+     - 빛이 지난 자리는 천천히 다시 어두워진다(인광/잔상).
+     - 본문 자체가 인터랙션이 된다: 반사광으로 종이를 비추는 손(읽기) vs 스스로 빛나는 스크린.
+     - L 키: 불 켜기/끄기 → 어둠을 걷고 종이 배치 전체를 본다.
+     크롬(grid + 하단 푸터 + 로더)은 main/index.html 양식을 공유.
+     외부 의존성 없음. 파일 더블클릭으로도 Chrome에서 동작.
+     ============================================================ */
+  @font-face {
+    font-family: 'JoseonGulim';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@1.0/ChosunGu.woff') format('woff');
+    font-weight: normal;
+    font-display: swap;
+  }
+  /* 잉크/배경: 회색 책상(레퍼런스 바닥색) + 검은 어둠막을 손전등으로 걷어낸다 */
+  :root {
+    --ink:#1b1b1b;          /* 종이 위 글자 */
+    --desk:#8f8f8f;         /* 책상(바닥) 회색 — 레퍼런스 배경 */
+    --paper:#fbfbf8;        /* 종이 흰색 (약간 따뜻) */
+    --dim:#cfcfcf;
+    --pink:#a0ff34; --pad:clamp(14px,1.6vw,30px);
+    --sans:"Gothic A1",ui-sans-serif,system-ui,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; background:#000; }
+  body {
+    font-family:'JoseonGulim',"Apple SD Gothic Neo",serif;
+    color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:none;
+    -moz-osx-font-smoothing:grayscale; -webkit-font-smoothing:antialiased;
+  }
+
+  /* ===== 책상 + 종이 레이어 (어둠 아래 깔림). z-index 1 ===== */
+  #page {
+    position:fixed; inset:0; z-index:1; background:var(--desk);
+    pointer-events:none; overflow:hidden;
+    display:flex; flex-direction:column;
+    padding:clamp(40px,6vh,80px) clamp(26px,3.4vw,60px) 0;
+  }
+
+  /* 큰 타이틀 — 레퍼런스의 볼드 헤드라인 자리 (위쪽 띠). 종이는 이 아래로 흐른다. */
+  .bigtitle {
+    flex:none;
+    font-family:var(--sans); font-weight:800; color:var(--ink);
+    font-size:clamp(28px,5vw,78px); line-height:.98; letter-spacing:-.01em;
+    text-transform:lowercase;
+  }
+  .bigtitle small{display:block;font-size:.27em;font-weight:700;letter-spacing:.02em;
+    margin-top:.7em;text-transform:none;color:#2a2a2a}
+
+  /* 종이 스택 — 타이틀 아래 남은 공간. 모든 종이는 한 컨테이너에 평평하게 두어
+     클릭 시 z-index만 올려 맨 위로 가져올 수 있게 한다(겹친 종이끼리 비교되도록). */
+  .stack { position:relative; flex:1 1 auto; min-height:0; }
+  .sheet {
+    position:absolute; left:50%; top:50%;     /* 중앙 기준, transform 으로 분산 */
+    background:var(--paper);
+    box-shadow:0 28px 55px rgba(0,0,0,.40), 0 8px 18px rgba(0,0,0,.32);
+    pointer-events:auto;                       /* 어둠막은 통과시키고 종이는 클릭 받음 */
+  }
+  /* 뒤에 깔리는 장식 종이들(빈 페이지) — 스택의 두께감. 클릭에 반응 안 함(통과). */
+  .ghost{width:clamp(280px,29vw,440px);aspect-ratio:1/1.414;z-index:1;pointer-events:none}
+  .g1{transform:translate(calc(-50% - 250px),-54%) rotate(-7deg)}
+  .g2{transform:translate(calc(-50% + 250px),-46%) rotate(5.5deg)}
+  .g3{transform:translate(calc(-50% + 70px),-58%) rotate(2.6deg)}
+  .ghost .gh-head{position:absolute;top:9%;left:9%;right:9%;height:2px;background:#e7e7e1}
+  .ghost .gh-lines{position:absolute;top:16%;left:9%;right:9%;bottom:9%;
+    background:repeating-linear-gradient(#efefe9 0 1px,transparent 1px 18px)}
+
+  /* 읽는 종이들 — 두 장이 살짝 겹쳐 펼쳐짐. */
+  .doc{
+    width:clamp(290px,30vw,450px);
+    aspect-ratio:1/1.414;            /* A4 느낌의 최소 비율 — 글이 길면 종이가 더 길어진다 */
+    padding:clamp(20px,2.4vw,40px) clamp(22px,2.6vw,44px);
+    color:var(--ink);
+  }
+  .doc.p1{transform:translate(calc(-50% - 195px),-50%) rotate(-1.6deg);z-index:3}
+  .doc.p2{transform:translate(calc(-50% + 195px),-50%) rotate(2.4deg);z-index:2}
+
+  .doc .bullet-head{font-family:var(--sans);font-weight:800;
+    font-size:clamp(14px,1.25vw,20px);line-height:1.25;margin-bottom:.9em}
+  .doc .meta{font-family:var(--mono);font-size:clamp(9px,.78vw,12px);
+    color:#6a6a6a;letter-spacing:.01em;margin-bottom:1.1em;
+    padding-bottom:.9em;border-bottom:1px solid #e6e6e0}
+  .doc p{font-size:clamp(10px,.95vw,13.5px);line-height:1.56;
+    letter-spacing:.005em;text-indent:1em;margin-bottom:.58em;text-align:justify}
+  .doc p:first-of-type{text-indent:0}
+  .doc .sig{font-family:var(--mono);font-size:clamp(9px,.78vw,12px);
+    color:#6a6a6a;margin-top:1.1em}
+  .doc .quote{color:#000;font-style:normal}
+
+  /* ===== 어둠 캔버스 — 책상을 덮는 검은 막. z-index 2 =====
+     pointer-events:none → 빛은 window 에서 추적, 클릭은 아래 종이로 통과한다. */
+  #dark { position:fixed; inset:0; z-index:2; display:block; pointer-events:none; touch-action:none; }
+  body.lights-on #dark { display:none; }
+  /* 손전등 모드: 커서 숨김(빛이 곧 커서). 불 켜면 보통 커서, 종이 위엔 포인터. */
+  body:not(.lights-on){ cursor:none; }
+  .sheet{ cursor:inherit; }
+  body.lights-on{ cursor:auto; }
+  body.lights-on .sheet{ cursor:pointer; }
+
+  /* 첫 진입 안내 */
+  #hint {
+    position:fixed; left:50%; bottom:64px; transform:translateX(-50%);
+    z-index:11; font-size:13px; color:#8a8a8a; letter-spacing:.04em;
+    transition:opacity .8s; pointer-events:none; text-align:center;
+    font-family:var(--mono);
+  }
+  #hint.gone { opacity:0; }
+  #hint b{color:#bdbdbd;font-weight:400}
+
+  /* dev-grid (장식) — 회색 3×3 라인 (main 양식). 클릭 통과 */
+  .dev-grid{position:fixed;inset:0;z-index:5;pointer-events:none}
+  .grid-inner{position:absolute;inset:0}
+  .gline{position:absolute;background:#dcdcdc;opacity:.5}
+  .gv{top:0;bottom:0;width:1px;transform:translateX(-.5px)}
+  .gh{left:0;right:0;height:1px;transform:translateY(-.5px)}
+  .gv1{left:33.333%}.gv2{left:66.667%}.gh1{top:33.333%}.gh2{top:66.667%}
+  /* 불 켜면 그리드도 보이게 */
+  body.lights-on .gline{opacity:.35;background:rgba(20,20,20,.4)}
+
+  /* ---- 미니 푸터 (main/index.html 양식) ---- */
+  .site-footer{position:fixed;left:0;right:0;bottom:0;z-index:10;
+    background:#000;border-top:1px solid #f3efe6;touch-action:auto;
+    display:flex;flex-direction:column;
+    font-family:var(--mono);font-size:clamp(11px,.85vw,15px);letter-spacing:.06em;color:#f3efe6}
+  body.lights-on .site-footer{background:#fff;border-top-color:var(--ink);color:var(--ink)}
+  .site-footer.open{height:33vh}
+  .foot-bar{padding:.75em var(--pad);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .foot-links{display:none;flex-direction:column;border-top:1px solid #f3efe6}
+  body.lights-on .foot-links{border-top-color:var(--ink)}
+  .site-footer:hover .foot-links,.site-footer.open .foot-links{display:flex}
+  .foot-link{font:inherit;letter-spacing:inherit;cursor:pointer;width:100%;
+    text-align:center;padding:.7em var(--pad);transition:background .15s;
+    border:none;background:0 0;color:inherit;text-decoration:none;display:block}
+  .foot-link + .foot-link{border-top:1px solid #f3efe6}
+  body.lights-on .foot-link + .foot-link{border-top-color:var(--ink)}
+  .foot-link:hover,.foot-link.active{background:rgba(243,239,230,.12)}
+  body.lights-on .foot-link:hover,body.lights-on .foot-link.active{background:#ededed}
+  .foot-panel{display:none}
+  .site-footer.open .foot-panel{display:block;flex:1 1 auto;min-height:0;overflow-y:auto;
+    border-top:1px solid #f3efe6;padding:1.2em var(--pad);text-align:left;line-height:1.7}
+  body.lights-on .site-footer.open .foot-panel{border-top-color:var(--ink)}
+  .foot-content{max-width:680px;margin:0 auto;opacity:.85;
+    font-family:var(--mono),"Gothic A1",sans-serif}
+  .foot-content h3{font-size:clamp(13px,1vw,18px);letter-spacing:.1em;margin:0 0 .9em}
+  .foot-content p{margin:0 0 1em}
+  .foot-copy{display:none}
+  .site-footer.open .foot-copy{display:block;text-align:center;border-top:1px solid #f3efe6;
+    padding:.75em var(--pad);font-size:clamp(9px,.7vw,12px);opacity:.5;letter-spacing:.06em}
+  body.lights-on .site-footer.open .foot-copy{border-top-color:var(--ink)}
+
+  /* 로더 */
+  #loader{position:fixed;inset:0;z-index:40;background:#000;
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:clamp(13px,1vw,18px);color:#f3efe6;transition:opacity .6s}
+  #loader.gone{opacity:0;pointer-events:none}
+
+  @media (max-width:820px){
+    .toc{display:none}
+    .doc.p2{display:none}            /* 좁은 화면: 읽는 종이 한 장만 */
+    .doc.p1{transform:translate(-50%,-50%) rotate(-1deg)}   /* 중앙 유지 */
+    .g1{transform:translate(calc(-50% - 120px),-54%) rotate(-7deg)}
+    .g2{transform:translate(calc(-50% + 120px),-46%) rotate(5.5deg)}
+    .g3{transform:translate(calc(-50% + 40px),-58%) rotate(2.6deg)}
+  }
+  @media (max-width:560px){
+    .site-footer.open{height:42vh}
+    .bigtitle{font-size:34px}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== 책상 + 종이 (비춰야 보인다) ===== -->
+<div id="page" aria-hidden="true">
+
+  <!-- <div class="bigtitle">light through,<br>not light on
+    <small>반사광과 투과광 · 스크린의 빛 — Marshall McLuhan</small>
+  </div> -->
+
+  <div class="stack">
+    <!-- 뒤에 깔린 빈 종이들(두께감). 클릭하면 맨 위로 올라온다. -->
+    <div class="sheet ghost g1"><div class="gh-head"></div><div class="gh-lines"></div></div>
+    <div class="sheet ghost g2"><div class="gh-head"></div><div class="gh-lines"></div></div>
+    <div class="sheet ghost g3"><div class="gh-head"></div><div class="gh-lines"></div></div>
+
+    <!-- 읽는 종이 두 장 -->
+      <!-- 종이 1 -->
+      <div class="sheet doc p1">
+        <!-- <div class="bullet-head">Marshall McLuhan,<br>Understanding Media<br>:The Extensions of Man</div> -->
+        <div class="meta">Marshall McLuhan, <i>Understanding Media:<br>The Extensions of Man</i> (1964)</div>
+        <p>Marshall McLuhan은 인쇄물이나 영화처럼 외부의 빛을 받아 보이는 이미지와, TV처럼 화면 안쪽에서 빛이 통과해 나오며 형성되는 이미지를 구분했다. 그는 TV 이미지를 <span class="quote">"light through, not light on"</span>으로 설명하며, 그것이 사진이나 영화처럼 완성된 그림이라기보다 끊임없이 형성되는 윤곽에 가깝다고 보았다.</p>
+        <p>이 구분은 단순한 광학적 차이에 머물지 않는다. 반사광으로 보이는 이미지는 표면 위에 놓인 대상을 바깥에서 바라보게 만든다. 빛은 대상에 닿고, 대상은 그 빛을 되돌려 보내며 모습을 드러낸다. 이때 보는 사람은 비교적 안정된 표면과 마주하고, 그 표면 위에 고정된 형태를 읽는다. 종이 위의 글자나 인쇄 이미지는 주변의 빛, 그림자, 장소의 밝기에 따라 분위기가 달라지지만, 그 존재 방식 자체는 표면 위에 머문다.</p>
+        <p>반면 투과광으로 보이는 스크린 이미지는 표면 위에 얹혀 있다기보다 화면 안쪽에서 밖으로 밀려 나오는 빛으로 나타난다. 스크린의 이미지는 외부의 빛을 받아 드러나는 것이 아니라, 스스로 빛을 내며 자신의 모습을 만든다. 그래서 스크린 앞의 사람은 빛이 닿은 대상을 보는 것이 아니라, 빛으로 생성된 대상을 직접 마주하게 된다. 이미지는 표면에 고정된 물질이라기보다, 계속 켜지고 유지되어야만 존재하는 상태에 가까워진다.</p>
+      </div>
+
+      <!-- 종이 2 -->
+      <div class="sheet doc p2">
+        <p>이 차이는 보는 태도에도 영향을 준다. 반사광의 이미지는 대상과 관찰자 사이에 일정한 거리를 만든다. 독자는 빛을 받은 표면을 바라보며 형태를 구분하고, 문장을 따라가고, 내용을 해석한다. 반대로 투과광의 이미지는 대상이 화면 안에서 스스로 나타나는 듯한 인상을 만든다. 빛은 단지 글자를 비추는 조건이 아니라, 이미지와 텍스트의 존재 자체가 된다. 이때 스크린의 텍스트는 빛을 받아 보이는 문자가 아니라, <span class="quote">빛으로 이루어진 문자</span>다.</p>
+        <p>McLuhan이 투과광의 화면을 더 감각적이고 몰입적인 매체로 본 이유도 여기에 있다. 스크린의 빛은 대상을 선명한 표면으로만 제시하기보다, 눈앞에서 계속 발생하는 이미지로 경험하게 한다. 보는 사람은 완전히 고정된 대상을 분석하기보다, 빛으로 나타나고 유지되는 화면의 상태에 감각적으로 붙잡힌다. 따라서 스크린의 빛은 내용을 드러내는 조명에 그치지 않고, 이미지가 존재하는 방식, 그것을 바라보는 거리, 그리고 읽는 사람의 감각적 태도를 함께 바꾸는 매체적 조건이 된다.</p>
+      </div>
+  </div>
+
+</div>
+
+<!-- 책상을 덮는 검은 막. 비춘 곳을 지운다. -->
+<canvas id="dark"></canvas>
+
+<!-- 회색 3×3 dev-grid (장식, 어둠 위 항상) -->
+<div class="dev-grid" aria-hidden="true">
+  <div class="grid-inner">
+    <div class="gline gv gv1"></div><div class="gline gv gv2"></div>
+    <div class="gline gh gh1"></div><div class="gline gh gh2"></div>
+  </div>
+</div>
+
+<div id="hint">마우스/손가락으로 종이를 비춰 읽으세요 &nbsp; <b>·&nbsp; L 키: 불 켜기/끄기</b></div>
+
+<!-- 미니 푸터 (main 양식) -->
+<footer class="site-footer" id="site-footer">
+  <div class="foot-bar">BOOKISHNESS /// 100 EXPERIMENTS IN READING ON SCREEN</div>
+  <nav class="foot-links">
+    <button class="foot-link" data-sec="about">ABOUT</button>
+  
+    <button class="foot-link" data-sec="light">LIGHT</button>
+    <button class="foot-link" id="sound-btn">SOUND: OFF</button>
+    <a class="foot-link" href="../../main/index.html">← BACK TO BOX</a>
+  </nav>
+  <div class="foot-panel"><div class="foot-content" id="foot-content"></div></div>
+  <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
+</footer>
+
+<div id="loader">Loading Digital Fluxbox<br>⋯</div>
+
+<script>
+/* ============================================================
+   손전등 — 캔버스를 검게 덮고, 빛이 닿은 곳을 "지운다".
+   destination-out 으로 구멍을 뚫고, 매 프레임 살짝 다시 칠해 잔상을 만든다.
+   ============================================================ */
+const canvas = document.getElementById("dark");
+const ctx = canvas.getContext("2d");
+const hint = document.getElementById("hint");
+
+let W = 0, H = 0, DPR = 1;
+let px = -9999, py = -9999;
+let has = false;
+let lastx = -9999, lasty = -9999;
+let speed = 0;
+let moved = false;
+let lightsOn = true;        // L 키: 어둠을 완전히 걷는 모드
+
+const FADE = 0.05;           // 매 프레임 다시 까매지는 정도(↑ 짧은 잔상, ↓ 오래 남음)
+function brushR() {
+  const base = Math.max(110, Math.min(W, H) * 0.17);
+  return base + Math.min(speed * 1.1, 70);
+}
+
+function resize() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = Math.round(W * DPR);
+  canvas.height = Math.round(H * DPR);
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.globalCompositeOperation = "source-over";
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, W, H);
+}
+window.addEventListener("resize", resize);
+resize();
+
+function setPointer(e) {
+  px = e.clientX; py = e.clientY; has = true;
+  if (!moved) { moved = true; hint.classList.add("gone"); }
+}
+let downX = 0, downY = 0;     // 클릭/드래그 구분용
+window.addEventListener("pointermove", setPointer, { passive: true });
+window.addEventListener("pointerdown", (e) => { downX = e.clientX; downY = e.clientY; setPointer(e); unlockAudio(); }, { passive: true });
+
+// 종이 클릭 = 맨 위로 올라오기. (비추려고 드래그한 경우는 제외)
+let topZ = 10;
+document.querySelectorAll("#page .doc").forEach((sheet) => {   // 내용 있는 종이만
+  sheet.addEventListener("click", (e) => {
+    if (Math.hypot(e.clientX - downX, e.clientY - downY) > 10) return;  // 드래그였음 → 무시
+    sheet.style.zIndex = ++topZ;
+  });
+});
+
+// L = 불 켜기/끄기
+window.addEventListener("keydown", (e) => {
+  if (e.key === "l" || e.key === "L") {
+    lightsOn = !lightsOn;
+    document.body.classList.toggle("lights-on", lightsOn);
+    hint.classList.add("gone");
+  }
+});
+
+function frame() {
+  if (!lightsOn) {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.fillStyle = "rgba(0,0,0," + FADE + ")";
+    ctx.fillRect(0, 0, W, H);
+
+    if (has && lastx > -9999) {
+      const dx = px - lastx, dy = py - lasty;
+      speed = speed * 0.8 + Math.sqrt(dx * dx + dy * dy) * 0.2;
+    }
+    lastx = px; lasty = py;
+
+    if (has) {
+      const R = brushR();
+      const g = ctx.createRadialGradient(px, py, 0, px, py, R);
+      g.addColorStop(0,   "rgba(0,0,0,1)");
+      g.addColorStop(0.62,"rgba(0,0,0,0.92)");
+      g.addColorStop(1,   "rgba(0,0,0,0)");
+      ctx.globalCompositeOperation = "destination-out";
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(px, py, R, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+    }
+  }
+
+  if (audioCtx && humGain) {
+    const vol = (muted || lightsOn) ? 0 : Math.min(speed * 0.006, 0.12);
+    humGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.08);
+    if (humOsc) humOsc.frequency.setTargetAtTime(58 + Math.min(speed * 0.4, 40), audioCtx.currentTime, 0.1);
+  }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ============================================================
+   하단 미니 푸터 (main 양식)
+   ============================================================ */
+const NAV_CONTENT = {
+  about: "종이책은 햇빛에 닿으며 주변 환경에 따라 다른 분위기를 만들어낸다. 반면 스크린의 빛은 종이 위에 반사되는 빛과는 다른 방식으로 눈에 들어온다. 스크린은 외부의 빛을 받아 내용을 드러내는 것이 아니라, 스스로 발광하며 이미지와 텍스트를 드러낸다.Marshall McLuhan(1911–1980)은 매체 자체가 메시지라고 보았다. 그는 TV 화면을 사진·영화 같은 '완성된 그림'이 아니라, 빛이 통과해 나오며 끊임없이 다시 그려지는 윤곽(mosaic)으로 설명했다.",
+  light: "반사광(light on): 빛이 표면에 닿고, 표면이 그 빛을 되돌려 보낸다. 종이·인쇄물. 고정된 표면을 바깥에서 읽는다.\n\n투과광(light through): 빛이 화면 안쪽에서 통과해 나온다. 스크린. 대상이 스스로 빛으로 생성되고, 켜져 있는 동안에만 존재한다.",
+};
+const footer = document.getElementById("site-footer");
+const footContent = document.getElementById("foot-content");
+let openSec = null;
+function openSection(btn){
+  const sec = btn.dataset.sec;
+  if (openSec===sec){ closeFooter(); return; }
+  openSec = sec;
+  footContent.innerHTML = "";
+  const h = document.createElement("h3"); h.textContent = btn.textContent.trim();
+  const p = document.createElement("p"); p.textContent = NAV_CONTENT[sec] || "";
+  footContent.append(h, p);
+  footer.classList.add("open");
+  footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.classList.toggle("active", b===btn));
+}
+function closeFooter(){
+  openSec=null; footer.classList.remove("open");
+  footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.classList.remove("active"));
+}
+footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.addEventListener("click", ()=>openSection(b)));
+addEventListener("keydown", e=>{ if(e.key==="Escape") closeFooter(); });
+
+/* ============================================================
+   형광등 험 (Web Audio) — 에셋 없이 오실레이터로 생성.
+   빛 이동 속도에 볼륨·피치 연동.
+   ============================================================ */
+let audioCtx = null, humOsc = null, humGain = null, humStarted = false;
+let muted = true;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  humGain = audioCtx.createGain();
+  humGain.gain.value = 0;
+  humGain.connect(audioCtx.destination);
+  humOsc = audioCtx.createOscillator();
+  humOsc.type = "sawtooth";
+  humOsc.frequency.value = 60;
+  const lp = audioCtx.createBiquadFilter();
+  lp.type = "lowpass"; lp.frequency.value = 320;
+  humOsc.connect(lp); lp.connect(humGain);
+  humOsc.start();
+  humStarted = true;
+}
+function unlockAudio() {
+  initAudio();
+  if (audioCtx && audioCtx.state === "suspended") audioCtx.resume();
+}
+
+// SOUND 토글 (예전 wave 버튼 대체)
+const soundBtn = document.getElementById("sound-btn");
+soundBtn.addEventListener("click", () => {
+  unlockAudio();
+  muted = !muted;
+  soundBtn.textContent = muted ? "SOUND: OFF" : "SOUND: ON";
+});
+
+/* 로더 숨김 */
+(function(){
+  const hide=()=>{ const l=document.getElementById("loader"); if(l) l.classList.add("gone"); };
+  addEventListener("load", hide); setTimeout(hide, 1200);
+})();
+</script>
+</body>
+</html>

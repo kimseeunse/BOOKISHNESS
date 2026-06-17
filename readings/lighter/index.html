@@ -1,0 +1,412 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>BOOKISHNESS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ffffff'/%3E%3Cg fill='none' stroke='%23231f20' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M16 7 C12 5 8 5 5 6 L5 25 C8 24 12 24 16 26 C20 24 24 24 27 25 L27 6 C24 5 20 5 16 7 Z'/%3E%3Cline x1='16' y1='7' x2='16' y2='26'/%3E%3C/g%3E%3C/svg%3E">
+
+<!-- 캔버스 글자는 사이트 공통 모노 폰트(--mono)를 그대로 사용. 별도 웹폰트 없음. -->
+
+<style>
+  /* ============================================================
+     스크린 책 100프로젝트 · 공통 규격(크롬) — main/index.html 양식
+     ============================================================ */
+  :root {
+    --ink:#141414; --bg:#ffffff; --dim:#9a9a9a;
+    --pink:#ff5bd1; --pad:clamp(14px,1.6vw,30px);
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; background:var(--bg); }
+  body {
+    font-family:var(--mono); color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent; touch-action:none;
+    -moz-osx-font-smoothing:grayscale; -webkit-font-smoothing:antialiased;
+  }
+
+  /* 그림이 그려지는 캔버스. z-index 2 (그리드 위). */
+  #stage { position:fixed; inset:0; z-index:2; cursor:pointer; }
+  #stage canvas { display:block; width:100%; height:100%; }
+
+  /* dev-grid (장식) — 캔버스 뒤 회색 3×3 라인 (main 양식). 클릭 통과 */
+  .dev-grid{position:fixed;inset:0;z-index:1;pointer-events:none}
+  .grid-inner{position:absolute;inset:0}
+  .gline{position:absolute;background:#dcdcdc;opacity:1}
+  .gv{top:0;bottom:0;width:1px;transform:translateX(-.5px)}
+  .gh{left:0;right:0;height:1px;transform:translateY(-.5px)}
+  .gv1{left:33.333%}.gv2{left:66.667%}.gh1{top:33.333%}.gh2{top:66.667%}
+
+  .site-footer{position:fixed;left:0;right:0;bottom:0;z-index:10;
+    background:var(--bg);border-top:1px solid var(--ink);touch-action:auto;
+    display:flex;flex-direction:column;
+    font-family:var(--mono);font-size:clamp(11px,.85vw,15px);letter-spacing:.06em}
+  .site-footer.open{height:33vh}
+  .foot-bar{padding:.75em var(--pad);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .foot-links{display:none;flex-direction:column;border-top:1px solid var(--ink)}
+  .site-footer:hover .foot-links,.site-footer.open .foot-links{display:flex}
+  .foot-link{font:inherit;letter-spacing:inherit;cursor:pointer;width:100%;
+    text-align:center;padding:.7em var(--pad);transition:background .15s;
+    border:none;background:0 0;color:inherit;text-decoration:none;display:block}
+  .foot-link + .foot-link{border-top:1px solid var(--ink)}
+  .foot-link:hover,.foot-link.active{background:#ededed}
+  .foot-panel{display:none}
+  .site-footer.open .foot-panel{display:block;flex:1 1 auto;min-height:0;overflow-y:auto;
+    border-top:1px solid var(--ink);padding:1.2em var(--pad);text-align:left;line-height:1.7}
+  .foot-content{max-width:680px;margin:0 auto;opacity:.85;
+    font-family:var(--mono),"Gothic A1",sans-serif}
+  .foot-content h3{font-size:clamp(13px,1vw,18px);letter-spacing:.1em;margin:0 0 .9em}
+  .foot-content p{margin:0 0 1em}
+  .foot-copy{display:none}
+  .site-footer.open .foot-copy{display:block;text-align:center;border-top:1px solid var(--ink);
+    padding:.75em var(--pad);font-size:clamp(9px,.7vw,12px);opacity:.5;letter-spacing:.06em}
+
+  #loader{position:fixed;inset:0;z-index:40;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:clamp(13px,1vw,18px);color:var(--ink);transition:opacity .6s}
+  #loader.gone{opacity:0;pointer-events:none}
+  #loader .load-inner{text-align:center;line-height:1.8;letter-spacing:.04em}
+
+  @media (max-width:560px){
+    .site-footer.open{height:42vh}
+  }
+</style>
+</head>
+<body>
+
+<!-- 회색 3×3 dev-grid (장식, 캔버스 뒤) -->
+<div class="dev-grid" aria-hidden="true">
+  <div class="grid-inner">
+    <div class="gline gv gv1"></div><div class="gline gv gv2"></div>
+    <div class="gline gh gh1"></div><div class="gline gh gh2"></div>
+  </div>
+</div>
+
+<div id="stage"><canvas id="cv"></canvas></div>
+
+<!-- 미니 푸터 (main 양식) -->
+<footer class="site-footer" id="site-footer">
+  <div class="foot-bar">BOOKISHNESS /// 100 EXPERIMENTS IN READING ON SCREEN</div>
+  <nav class="foot-links">
+    <button class="foot-link" data-sec="about">ABOUT</button>
+    <a class="foot-link" href="../../main/index.html">← BACK TO BOX</a>
+  </nav>
+  <div class="foot-panel"><div class="foot-content" id="foot-content"></div></div>
+  <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
+</footer>
+
+<div id="loader"><div class="load-inner">Loading Digital Fluxbox<br>⋯</div></div>
+
+<script>
+/* ============================================================
+   캔버스 셋업 (레티나 대응) — 템플릿 공통
+   ============================================================ */
+const cv  = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const stage = document.getElementById("stage");
+let W = 0, H = 0, DPR = 1;
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W*DPR; cv.height = H*DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  if (typeof onResize === "function") onResize();
+}
+window.addEventListener("resize", resize);
+
+/* ============================================================
+   PIECE LOGIC — 부싯돌 라이터. 휠을 탁! 굴려 켤 때마다
+   원문(영역)에서 한 글자씩 피어올랐다 사라진다.
+   ============================================================ */
+
+/* 읽을 원문(영문) — ABOUT 의 한국어 원문을 옮긴 것.
+   휠을 한 번 굴릴 때마다 다음 한 글자가 나온다. */
+const TEXT = "A still image on a screen merely has the appearance of stillness; ontologically, it is not still. It is the product of continuous re-presentation, and the image's permanence depends on its regeneration at every instant.";
+const CHARS = [...TEXT];
+let charIdx = 0;
+function nextChar(){ const c = CHARS[charIdx % CHARS.length]; charIdx++; return c; }
+/* 다음 '보이는' 글자 (공백은 건너뛴다 — 한 번 굴리면 한 글자) */
+function takeChar(){
+  let c = nextChar(), guard = 0;
+  while (c === " " && guard++ < CHARS.length) c = nextChar();
+  return c;
+}
+
+/* 라이터 치수 (onResize 에서 계산) — 클래식 BIC 비율: 슬림하고 길쭉 */
+let cx=0, bodyW=0, bodyH=0, bodyTop=0, bodyBot=0,
+    hoodTop=0, hoodH=0, wheelCX=0, wheelCY=0, wheelR=0,
+    NOZ_X=0, NOZ_Y=0, FS=40;
+function onResize(){
+  bodyW   = Math.max(34, Math.min(W*0.055, 54));   // 정면뷰: 얇게
+  bodyH   = bodyW*4.4;                              // 검은 몸체 더 길게
+  cx      = W/2;
+  bodyBot = H - 64;
+  bodyTop = bodyBot - bodyH;
+  hoodH   = bodyW*1.25;
+  hoodTop = bodyTop - hoodH + bodyW*0.22;   // 후드가 몸체 위를 약간 덮음
+  wheelR  = bodyW*0.42;                      // (불똥 위치 계산용)
+  wheelCX = cx;
+  wheelCY = hoodTop + bodyW*0.20;            // 세운 톱니 원통 중심 (후드 윗부분)
+  NOZ_X   = cx;
+  NOZ_Y   = wheelCY - bodyW*0.50;            // 불꽃은 세운 휠 위에서 솟음
+  FS      = Math.max(26, Math.min(W/15, 56));
+}
+
+/* 상태 */
+let flameLife = 0;      // 0~1, 불꽃 잔량 (굴릴 때마다 확 차고 빠르게 꺼진다)
+let flick = 0;          // 불꽃 떨림 위상
+let wheelAngle = 0;     // 휠 회전각
+let wheelSpin  = 0;     // 휠 회전 속도 (굴릴 때 확 늘었다 줄어듦)
+const sparks  = [];     // 부싯돌 불똥
+const letters = [];     // 피어오르는 글자
+
+/* 탁! — 휠을 굴린다. 불똥이 튀고 불이 붙으며, 다음 한 글자가 나온다. */
+function flickLighter(){
+  wheelSpin = 0.9;
+  flameLife = Math.min(1, flameLife + 0.9);
+  // 부싯돌 불똥
+  for (let i=0;i<14;i++){
+    const ang = -Math.PI/2 + (Math.random()-0.5)*1.5;
+    const spd = 1.5 + Math.random()*4.5;
+    sparks.push({
+      x:wheelCX+(Math.random()-0.5)*wheelR, y:wheelCY-wheelR*0.4,
+      vx:Math.cos(ang)*spd, vy:Math.sin(ang)*spd,
+      life:1, decay:0.05+Math.random()*0.06, size:0.8+Math.random()*1.4,
+    });
+  }
+  // 다음 글자 한 개
+  const ch = takeChar();
+  letters.push({
+    ch, x:NOZ_X, y:NOZ_Y - FS*0.9,
+    vy:-(0.45+Math.random()*0.25), drift:(Math.random()-0.5)*0.25,
+    life:1, decay:0.0085,
+  });
+}
+
+/* 둥근 사각형 패스 */
+function rr(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.arcTo(x+w,y,   x+w,y+h, r);
+  ctx.arcTo(x+w,y+h, x,  y+h, r);
+  ctx.arcTo(x,  y+h, x,  y,   r);
+  ctx.arcTo(x,  y,   x+w,y,   r);
+  ctx.closePath();
+}
+
+/* 부싯돌 휠 — 90° 세운 톱니 원통(배럴). 톱니가 가로로 새겨져 있고,
+   굴리면 톱니가 세로로 스크롤된다 (세로축으로 굴러가는 실린더). */
+function drawWheel(){
+  const wW = bodyW*0.50, wH = bodyW*0.74;          // 90° 회전: 세로로 길쭉
+  const x0 = wheelCX - wW/2, y0 = wheelCY - wH/2;
+  // 원통 몸통 — 가로 그라디언트로 곡면(실린더) 음영
+  const cg = ctx.createLinearGradient(x0, 0, x0+wW, 0);
+  cg.addColorStop(0,"#55575b"); cg.addColorStop(.28,"#b9bdc1");
+  cg.addColorStop(.5,"#eef1f3"); cg.addColorStop(.72,"#9a9ea2");
+  cg.addColorStop(1,"#46484c");
+  ctx.fillStyle = cg;
+  rr(x0, y0, wW, wH, wW*0.5); ctx.fill();
+  // 톱니(가로 줄) — 굴리면 세로로 흐름. 원통 안쪽으로만 클립.
+  ctx.save();
+  rr(x0, y0, wW, wH, wW*0.5); ctx.clip();
+  const step = Math.max(3, wH/15);
+  const off  = ((wheelAngle*step) % step + step) % step;   // 스크롤 위상
+  for (let y = y0 - step + off; y < y0+wH+step; y += step){
+    ctx.strokeStyle = "rgba(0,0,0,0.40)"; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(x0+wW*0.12, y); ctx.lineTo(x0+wW*0.88, y); ctx.stroke();
+    ctx.strokeStyle = "rgba(255,255,255,0.55)"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x0+wW*0.14, y+1.3); ctx.lineTo(x0+wW*0.86, y+1.3); ctx.stroke();
+  }
+  ctx.restore();
+  // 원통 외곽선 + 위아래 축(어두운 캡)
+  ctx.strokeStyle = "#3a3c40"; ctx.lineWidth = 1.2;
+  rr(x0, y0, wW, wH, wW*0.5); ctx.stroke();
+  ctx.fillStyle = "#3f4145";
+  ctx.beginPath(); ctx.ellipse(wheelCX, y0+wW*0.5,     wW*0.34, wW*0.16, 0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(wheelCX, y0+wH-wW*0.5, wW*0.34, wW*0.16, 0,0,Math.PI*2); ctx.fill();
+}
+
+/* 라이터 본체 — 클래식 BIC: 검은 광택 몸체 + 크롬 후드 + 빨간 가스버튼 + 톱니 휠.
+   발광 없음, 평면적인 사실 묘사. */
+function drawLighter(){
+  // ── 검은 광택 몸체 ──
+  const bg = ctx.createLinearGradient(cx-bodyW/2,0,cx+bodyW/2,0);
+  bg.addColorStop(0,"#000");    bg.addColorStop(.18,"#2e2e30");
+  bg.addColorStop(.34,"#101011"); bg.addColorStop(.62,"#070708");
+  bg.addColorStop(1,"#000");
+  ctx.fillStyle = bg;
+  rr(cx-bodyW/2, bodyTop, bodyW, bodyBot-bodyTop, bodyW*0.12); ctx.fill();
+  // 길쭉한 광택 하이라이트
+  ctx.fillStyle = "rgba(255,255,255,0.16)";
+  rr(cx-bodyW*0.30, bodyTop+bodyH*0.06, bodyW*0.12, bodyH*0.84, bodyW*0.04); ctx.fill();
+
+  // ── 빨간 가스 버튼 (후드 아래, 몸체 위 앞쪽) ──
+  const btnTop = bodyTop - bodyW*0.40;
+  ctx.fillStyle = "#b9241a";
+  rr(cx-bodyW*0.30, btnTop, bodyW*0.66, bodyW*0.62, bodyW*0.14); ctx.fill();
+  ctx.fillStyle = "rgba(255,255,255,0.22)";
+  rr(cx-bodyW*0.22, btnTop+bodyW*0.07, bodyW*0.18, bodyW*0.16, bodyW*0.05); ctx.fill();
+
+  // ── 크롬 후드 (둥근 위, 세로 크롬 반사) ──
+  const hw = bodyW*0.50;
+  const hg = ctx.createLinearGradient(cx-hw,0,cx+hw,0);
+  hg.addColorStop(0,"#5e6064");  hg.addColorStop(.18,"#d8dcdf");
+  hg.addColorStop(.36,"#92989c"); hg.addColorStop(.5,"#f1f4f6");
+  hg.addColorStop(.66,"#aeb2b6"); hg.addColorStop(.84,"#787c80");
+  hg.addColorStop(1,"#54565a");
+  ctx.fillStyle = hg;
+  const hoodBase = bodyTop + bodyW*0.10;
+  ctx.beginPath();
+  ctx.moveTo(cx-hw, hoodBase);
+  ctx.lineTo(cx-hw, hoodTop+wheelR*0.45);
+  ctx.quadraticCurveTo(cx-hw, hoodTop-wheelR*0.35, cx-wheelR*0.55, hoodTop-wheelR*0.25);
+  ctx.lineTo(cx+wheelR*0.55, hoodTop-wheelR*0.25);
+  ctx.quadraticCurveTo(cx+hw, hoodTop-wheelR*0.35, cx+hw, hoodTop+wheelR*0.45);
+  ctx.lineTo(cx+hw, hoodBase);
+  ctx.closePath(); ctx.fill();
+  // 후드 가로 빗살 음영(라인)
+  ctx.strokeStyle = "rgba(0,0,0,0.16)"; ctx.lineWidth = 1;
+  for (let i=0;i<3;i++){
+    const yy = hoodTop + wheelR*1.05 + i*Math.max(3,wheelR*0.22);
+    ctx.beginPath(); ctx.moveTo(cx-hw*0.82, yy); ctx.lineTo(cx+hw*0.82, yy); ctx.stroke();
+  }
+  // 불꽃 빠져나오는 슬릿
+  ctx.fillStyle = "#2c2d30";
+  ctx.fillRect(cx-wheelR*0.5, hoodTop-wheelR*0.22, wheelR, wheelR*0.22);
+
+  // ── 부싯돌 휠 (맨 위) ──
+  drawWheel();
+}
+
+/* 사실적인 작은 불꽃 — 굴릴 때 잠깐 피었다 사그라든다 (네온 아님) */
+function drawFlame(){
+  if (flameLife <= 0) return;
+  const a = Math.min(1, flameLife);
+  const fl = 0.6 + 0.4*flameLife;
+  const fh = (FS*1.3 + 18) * fl;
+  const fw = (FS*0.34 + 6) * fl;
+  const wob = Math.sin(flick*0.7)*2.2 + Math.sin(flick*1.9)*1.4;
+  const baseY = NOZ_Y + 1;
+  // 바깥(주황)
+  ctx.fillStyle = `rgba(247,140,30,${0.85*a})`;
+  flamePath(baseY, fw*1.18, fh, wob);            ctx.fill();
+  // 가운데(노랑)
+  ctx.fillStyle = `rgba(255,196,40,${0.92*a})`;
+  flamePath(baseY, fw*0.78, fh*0.86, wob*0.8);   ctx.fill();
+  // 속심(연노랑/흰)
+  ctx.fillStyle = `rgba(255,248,205,${a})`;
+  flamePath(baseY, fw*0.42, fh*0.55, wob*0.6);   ctx.fill();
+  // 밑동(파란빛)
+  ctx.fillStyle = `rgba(90,130,255,${0.45*a})`;
+  ctx.beginPath();
+  ctx.ellipse(NOZ_X+wob*0.3, baseY-fh*0.10, fw*0.5, fh*0.16, 0, 0, Math.PI*2);
+  ctx.fill();
+}
+
+/* ============================================================
+   메인 루프 — 흰 배경 위에 라이터를 두고, 굴릴 때 글자가 핀다.
+   ============================================================ */
+let last = 0;
+function frame(t){
+  last = t;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  // 흰 배경
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0,0,W,H);
+
+  flick += 0.4;
+  wheelAngle += wheelSpin;
+  wheelSpin  *= 0.86;
+  if (flameLife > 0) flameLife = Math.max(0, flameLife - 0.028);
+
+  drawLighter();
+  drawFlame();
+
+  // 피어오르는 글자 (검정 세리프, 발광 없음)
+  for (let i=letters.length-1;i>=0;i--){
+    const L = letters[i];
+    L.y  += L.vy; L.vy *= 0.99;
+    L.x  += L.drift;
+    L.life -= L.decay;
+    if (L.life <= 0){ letters.splice(i,1); continue; }
+    const al = L.life < 0.3 ? L.life/0.3 : 1;     // 끝에서만 사라짐
+    ctx.font = `${FS*0.62}px ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace`;
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = `rgba(20,20,20,${al})`;
+    ctx.fillText(L.ch, L.x, L.y);
+  }
+
+  // 부싯돌 불똥
+  for (let i=sparks.length-1;i>=0;i--){
+    const s = sparks[i];
+    s.vy += 0.16; s.x += s.vx; s.y += s.vy;
+    s.life -= s.decay;
+    if (s.life <= 0){ sparks.splice(i,1); continue; }
+    ctx.fillStyle = `rgba(255,${150+Math.floor(80*s.life)},40,${s.life})`;
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.size*s.life+0.3, 0, Math.PI*2); ctx.fill();
+  }
+
+  requestAnimationFrame(frame);
+}
+
+/* 불꽃 teardrop 패스 — 노즐(baseY)에서 위로 솟구침 */
+function flamePath(baseY, w, h, wob){
+  ctx.beginPath();
+  ctx.moveTo(NOZ_X, baseY);
+  ctx.quadraticCurveTo(NOZ_X - w + wob*0.4, baseY - h*0.55, NOZ_X + wob, baseY - h);
+  ctx.quadraticCurveTo(NOZ_X + w + wob*0.4, baseY - h*0.55, NOZ_X, baseY);
+  ctx.closePath();
+}
+
+/* ============================================================
+   입력 — 화면 아무 곳이나 누르면(또는 탭) 라이터를 탁! 친다
+   ============================================================ */
+stage.addEventListener("pointerdown", ()=>{ flickLighter(); });
+
+resize();
+requestAnimationFrame(frame);
+
+/* ============================================================
+   하단 미니 푸터 (main 양식)
+   ============================================================ */
+const NAV_CONTENT = {
+  // 한글 원문 → 줄바꿈 → 영문 번역 (각 항목이 한 문단)
+  about: [
+    "스크린의 정지 이미지는 정지의 외관(appearance of stillness)을 가질 뿐, 존재론적으로는 정지가 아니다. 그것은 지속적 재현(continuous re-presentation)의 결과물이며, 이미지의 영속성은 매순간의 재생성에 의존한다.",
+    "A still image on a screen merely has the appearance of stillness; ontologically, it is not still. It is the product of continuous re-presentation, and the image's permanence depends on its regeneration at every instant.",
+  ],
+};
+const footer = document.getElementById("site-footer");
+const footContent = document.getElementById("foot-content");
+let openSec = null;
+function openSection(btn){
+  const sec = btn.dataset.sec;
+  if (openSec===sec){ closeFooter(); return; }
+  openSec = sec;
+  footContent.innerHTML = "";
+  const paras = [].concat(NAV_CONTENT[sec] || "");
+  paras.forEach(text=>{
+    const p = document.createElement("p"); p.textContent = text;
+    footContent.append(p);
+  });
+  footer.classList.add("open");
+  footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.classList.toggle("active", b===btn));
+}
+function closeFooter(){
+  openSec=null; footer.classList.remove("open");
+  footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.classList.remove("active"));
+}
+footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.addEventListener("click", ()=>openSection(b)));
+addEventListener("keydown", e=>{ if(e.key==="Escape") closeFooter(); });
+
+/* 로더 숨김 */
+(function(){
+  const hide=()=>{ const l=document.getElementById("loader"); if(l) l.classList.add("gone"); };
+  addEventListener("load", hide); setTimeout(hide, 1200);
+})();
+</script>
+</body>
+</html>

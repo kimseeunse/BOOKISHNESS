@@ -1,0 +1,408 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>BOOKISHNESS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ffffff'/%3E%3Cg fill='none' stroke='%23231f20' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M16 7 C12 5 8 5 5 6 L5 25 C8 24 12 24 16 26 C20 24 24 24 27 25 L27 6 C24 5 20 5 16 7 Z'/%3E%3Cline x1='16' y1='7' x2='16' y2='26'/%3E%3C/g%3E%3C/svg%3E">
+
+<!-- 하단 푸터 한글용 폰트 (Gothic A1). 드릴 회전 글씨엔 영향 없음. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1&display=swap" rel="stylesheet">
+
+<style>
+  /* ============================================================
+     스크린 책 100프로젝트 · 읽기방식: 드릴 책 (drill)
+     종이를 드릴에 꽂고 무한히 돌리는 책.
+     - 텍스트가 동심원(ring)을 따라 배치되고, 전체가 회전한다.
+     - 드래그/스크롤(맥) = 손가락 스핀(아이폰) 으로 돌린다.
+     - 빠르게 돌릴수록 흐려져서 읽을 수 없다 (스크린의 잔상·재생성).
+     - 끝(페이지 가장자리)이 없다 → 영원히 안 끝나는 책.
+     크롬(grid + 하단 푸터 + 로더)은 main/index.html 양식을 공유.
+     외부 의존성 없음(폰트 CSS 제외). 파일 더블클릭으로도 Chrome에서 동작.
+     ============================================================ */
+  /* 폰트: 조선굴림 (눈누 webfont CDN). 인터넷 연결 시 로딩됨.
+     전시 오프라인까지 대비하려면 나중에 woff2 받아 fonts/에 자체호스팅. */
+  @font-face {
+    font-family: 'JoseonGulim';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@1.0/ChosunGu.woff') format('woff');
+    font-weight: normal;
+    font-display: swap;
+  }
+  :root {
+    --ink:#141414; --bg:#ffffff; --dim:#9a9a9a;
+    --pink:#ff5bd1; --pad:clamp(14px,1.6vw,30px);
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; background:var(--bg); }
+  body {
+    font-family:'JoseonGulim',"Apple SD Gothic Neo",serif;
+    color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  /* 회전판이 잡는 영역. 터치 시 브라우저 스크롤/줌 방지. */
+  #stage { position:fixed; inset:0; z-index:2; touch-action:none; cursor:grab; }
+  #stage.grabbing { cursor:grabbing; }
+  svg { width:100%; height:100%; display:block; }
+
+  /* 회전하는 텍스트 그룹 — 흐림은 JS가 속도에 비례해 건다. */
+  #disc text { fill:var(--ink); }
+
+  /* 첫 진입 안내 — 한 번 돌리면 사라짐. 푸터 위로 띄움. */
+  #hint {
+    position:fixed; left:50%; bottom:64px; transform:translateX(-50%);
+    z-index:9; font-size:14px; color:var(--dim); letter-spacing:.04em;
+    transition:opacity .6s; pointer-events:none; text-align:center;
+    font-family:var(--mono);
+  }
+  #hint.gone { opacity:0; }
+
+  /* dev-grid (장식) — 캔버스 뒤 회색 3×3 라인 (main 양식). 클릭 통과 */
+  .dev-grid{position:fixed;inset:0;z-index:1;pointer-events:none}
+  .grid-inner{position:absolute;inset:0}
+  .gline{position:absolute;background:#dcdcdc;opacity:1}
+  .gv{top:0;bottom:0;width:1px;transform:translateX(-.5px)}
+  .gh{left:0;right:0;height:1px;transform:translateY(-.5px)}
+  .gv1{left:33.333%}.gv2{left:66.667%}.gh1{top:33.333%}.gh2{top:66.667%}
+
+  /* ---- 미니 푸터 (main/index.html 양식) ----
+     접힘 = 가운데 한 줄 · hover = ABOUT / SOUND / BACK TO BOX
+     · 섹션 클릭 = 푸터가 1/3 높이로 올라오며 스크롤 패널 표시 */
+  .site-footer{position:fixed;left:0;right:0;bottom:0;z-index:10;
+    background:var(--bg);border-top:1px solid var(--ink);touch-action:auto;
+    display:flex;flex-direction:column;
+    font-family:var(--mono);font-size:clamp(11px,.85vw,15px);letter-spacing:.06em}
+  .site-footer.open{height:33vh}
+  .foot-bar{padding:.75em var(--pad);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .foot-links{display:none;flex-direction:column;border-top:1px solid var(--ink)}
+  .site-footer:hover .foot-links,.site-footer.open .foot-links{display:flex}
+  .foot-link{font:inherit;letter-spacing:inherit;cursor:pointer;width:100%;
+    text-align:center;padding:.7em var(--pad);transition:background .15s;
+    border:none;background:0 0;color:inherit;text-decoration:none;display:block}
+  .foot-link + .foot-link{border-top:1px solid var(--ink)}
+  .foot-link:hover,.foot-link.active{background:#ededed}
+  .foot-panel{display:none}
+  .site-footer.open .foot-panel{display:block;flex:1 1 auto;min-height:0;overflow-y:auto;
+    border-top:1px solid var(--ink);padding:1.2em var(--pad);text-align:left;line-height:1.7}
+  .foot-content{max-width:680px;margin:0 auto;opacity:.85;
+    font-family:var(--mono),"Gothic A1",sans-serif}
+  .foot-content h3{font-size:clamp(13px,1vw,18px);letter-spacing:.1em;margin:0 0 .9em}
+  .foot-content p{margin:0 0 1em}
+  .foot-copy{display:none}
+  .site-footer.open .foot-copy{display:block;text-align:center;border-top:1px solid var(--ink);
+    padding:.75em var(--pad);font-size:clamp(9px,.7vw,12px);opacity:.5;letter-spacing:.06em}
+
+  /* 로더 — main 양식. load 직후 사라짐. */
+  #loader{position:fixed;inset:0;z-index:40;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:clamp(13px,1vw,18px);color:var(--ink);transition:opacity .6s}
+  #loader.gone{opacity:0;pointer-events:none}
+
+  @media (max-width:560px){
+    .site-footer.open{height:42vh}
+  }
+</style>
+</head>
+<body>
+
+<!-- 회색 3×3 dev-grid (장식, 드릴 뒤) -->
+<div class="dev-grid" aria-hidden="true">
+  <div class="grid-inner">
+    <div class="gline gv gv1"></div><div class="gline gv gv2"></div>
+    <div class="gline gh gh1"></div><div class="gline gh gh2"></div>
+  </div>
+</div>
+
+<div id="hint">드래그하거나 스크롤해서 돌리세요</div>
+
+<div id="stage">
+  <svg id="svg" viewBox="0 0 1000 1000" preserveAspectRatio="xMidYMid meet">
+    <defs id="defs"></defs>
+    <g id="disc">
+      <!-- 드릴 중심(축) -->
+      <circle cx="500" cy="500" r="7" fill="#141414"></circle>
+      <circle cx="500" cy="500" r="15" fill="none" stroke="#141414" stroke-width="1"></circle>
+    </g>
+  </svg>
+</div>
+
+<!-- 미니 푸터 (main 양식) -->
+<footer class="site-footer" id="site-footer">
+  <div class="foot-bar">BOOKISHNESS /// 100 EXPERIMENTS IN READING ON SCREEN</div>
+  <nav class="foot-links">
+    <button class="foot-link" data-sec="about">ABOUT</button>
+    <button class="foot-link" id="sound-btn">SOUND: ON</button>
+    <a class="foot-link" href="../../main/index.html">← BACK TO BOX</a>
+  </nav>
+  <div class="foot-panel"><div class="foot-content" id="foot-content"></div></div>
+  <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
+</footer>
+
+<div id="loader">Loading Digital Fluxbox<br>⋯</div>
+
+<script>
+const SVGNS = "http://www.w3.org/2000/svg";
+const CX = 500, CY = 500;
+
+/* ============================================================
+   읽을 내용 — 링마다 한 구절. (네 스크린 현상학 글에서)
+   여기 문장만 바꾸면 다른 책이 됩니다.
+   ============================================================ */
+// Jeff Bezos 인용. 바깥 링(①)에서 시작해 중심(④)으로 읽힌다 — 드릴이 파고드는 방향.
+// 각 문장은 한 번씩만, 같은 글자크기로 → 어느 링도 혼자 얇거나 헐겁지 않게.
+// 반지름: 안쪽 구멍 작게 + 간격을 바깥으로 갈수록 넓게(90→100→110) = 1차 시각보정.
+// 눈으로 보고 r 값만 조정하면 됨.
+const RINGS = [
+  { r: 110, fs: 26, text: "당신은 여러 측면에서 책만큼 훌륭해야합니다." },                    // ④ 중심 (작게 → 거의 꽉 참)
+  { r: 200, fs: 26, text: "만약 당신이 이런 것을 하려고 한다면" },                          // ③ (④로 이어지는 한 문장 → 마침표 없음)
+  { r: 300, fs: 26, text: "하지만 장시간 독서는 그렇지 않죠." },                              // ②
+  { r: 410, fs: 26, text: "초창기 웹의 시작과 함께 짧은 형식의 독서가 디지털화되고 있습니다." }, // ① 바깥(시작)
+];
+
+// 글자 가로 자폭 (1.0 = 원래, 1.10 = 10% 넓게, 1.5 = 많이 넓게)
+const GLYPH_WIDEN = 1.10;
+
+const defs = document.getElementById("defs");
+const disc = document.getElementById("disc");
+
+/* 링 하나 만들기: 원형 path + 그 위에 문장 한 번 얹기. */
+RINGS.forEach((ring, i) => {
+  const C = 2 * Math.PI * ring.r;                 // 원둘레
+  const id = "ring" + i;
+
+  // 원형 경로 (시계방향). a 커맨드 두 개로 완전한 원.
+  const path = document.createElementNS(SVGNS, "path");
+  path.setAttribute("id", id);
+  path.setAttribute(
+    "d",
+    `M ${CX},${CY} m ${-ring.r},0 a ${ring.r},${ring.r} 0 1,1 ${ring.r * 2},0 a ${ring.r},${ring.r} 0 1,1 ${-ring.r * 2},0`
+  );
+  defs.appendChild(path);
+
+  // 각 문장을 딱 한 번씩만 (반복·늘이기 없음 → 자간 자연스럽고 링끼리 일관됨)
+  const text = document.createElementNS(SVGNS, "text");
+  text.setAttribute("font-size", ring.fs);
+
+  const tp = document.createElementNS(SVGNS, "textPath");
+  tp.setAttribute("href", "#" + id);
+  tp.setAttributeNS("http://www.w3.org/1999/xlink", "xlink:href", "#" + id);
+  tp.setAttribute("startOffset", "0");              // 시작점에서 출발 → 앞부분 안 잘림
+  tp.textContent = ring.text;
+  text.appendChild(tp);
+
+  // 시작점을 링마다 90°씩 회전 → 사방으로 분산(핀휠). 회전이라 잘림 없음.
+  const g = document.createElementNS(SVGNS, "g");
+  g.setAttribute("transform", `rotate(${i * 90} ${CX} ${CY})`);
+  g.appendChild(text);
+  disc.appendChild(g);
+
+  // 자폭 늘이기: 실제 글자 폭을 잰 뒤 그보다 길게 textLength를 줘서 가로로 넓힘.
+  if (GLYPH_WIDEN !== 1) {
+    const natural = text.getComputedTextLength();
+    text.setAttribute("textLength", natural * GLYPH_WIDEN);
+    text.setAttribute("lengthAdjust", "spacingAndGlyphs");
+  }
+});
+
+/* ============================================================
+   회전 + 관성(momentum)
+   ============================================================ */
+const stage = document.getElementById("stage");
+const svg = document.getElementById("svg");
+const hint = document.getElementById("hint");
+
+let angle = 0;          // 현재 각도(도)
+let vel = 0;            // 각속도(도/프레임)
+let dragging = false;
+let lastA = 0;          // 직전 포인터 각도
+let moved = false;
+
+const FRICTION = 0.975; // 1에 가까울수록 오래 돈다
+const MAX_BLUR = 14;
+let blurOn = true;      // B 키로 토글 (블러 있는/없는 느낌 비교용)
+
+// 화면 좌표 → 중심 기준 각도(도)
+function pointerAngle(e) {
+  const rect = svg.getBoundingClientRect();
+  const ccx = rect.left + rect.width / 2;
+  const ccy = rect.top + rect.height / 2;
+  return Math.atan2(e.clientY - ccy, e.clientX - ccx) * 180 / Math.PI;
+}
+function norm(d) {            // -180..180 로 정규화
+  while (d > 180) d -= 360;
+  while (d < -180) d += 360;
+  return d;
+}
+function killHint() {
+  if (!moved) { moved = true; hint.classList.add("gone"); }
+}
+
+stage.addEventListener("pointerdown", (e) => {
+  dragging = true;
+  vel = 0;
+  lastA = pointerAngle(e);
+  stage.classList.add("grabbing");
+  stage.setPointerCapture(e.pointerId);
+});
+stage.addEventListener("pointermove", (e) => {
+  if (!dragging) return;
+  const a = pointerAngle(e);
+  const d = norm(a - lastA);
+  angle += d;
+  vel = d;                   // 놓을 때 이 속도가 관성으로 이어짐
+  lastA = a;
+  killHint();
+});
+function endDrag(e) {
+  if (!dragging) return;
+  dragging = false;
+  stage.classList.remove("grabbing");
+}
+stage.addEventListener("pointerup", endDrag);
+stage.addEventListener("pointercancel", endDrag);
+
+// B 키 = 블러 켜기/끄기 (느낌 비교)
+window.addEventListener("keydown", (e) => {
+  if (e.key === "b" || e.key === "B") blurOn = !blurOn;
+});
+
+// 스크롤로도 돌리기 (맥 트랙패드/휠)
+stage.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  vel += e.deltaY * 0.06;
+  killHint();
+}, { passive: false });
+
+// 매 프레임: 각도 갱신 + 속도에 비례한 흐림
+function frame() {
+  if (!dragging) {
+    angle += vel;
+    vel *= FRICTION;
+    if (Math.abs(vel) < 0.01) vel = 0;
+  }
+  disc.setAttribute("transform", `rotate(${angle} ${CX} ${CY})`);
+
+  const speed = Math.abs(vel);
+  const blur = blurOn ? Math.min(speed * 0.9, MAX_BLUR) : 0;   // 빠를수록 안 읽힘
+  disc.style.filter = blur > 0.3 ? `blur(${blur}px)` : "none";
+
+  // 효과음: 회전 속도 → 볼륨 + 피치 (멈추면 무음)
+  if (audioCtx && drillGain) {
+    const vol = muted ? 0 : Math.min(speed * 0.05, 0.9);
+    drillGain.gain.setTargetAtTime(vol, audioCtx.currentTime, 0.06);   // 부드럽게
+    if (drillSrc) drillSrc.playbackRate.value = 0.7 + Math.min(speed * 0.03, 1.3);
+  }
+
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ============================================================
+   드릴 효과음 (Web Audio) — sounds/Drill.mp3 루프, 회전 속도에 볼륨·피치 연동
+   ============================================================ */
+let audioCtx = null, drillSrc = null, drillGain = null, drillBuffer = null, drillStarted = false;
+let muted = false;
+
+function initAudio() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  drillGain = audioCtx.createGain();
+  drillGain.gain.value = 0;
+  drillGain.connect(audioCtx.destination);
+  fetch("sounds/Drill.mp3")
+    .then(r => r.arrayBuffer())
+    .then(b => audioCtx.decodeAudioData(b))
+    .then(buf => { drillBuffer = buf; startDrill(); })
+    .catch(e => console.error("드릴 효과음 로드 실패:", e));
+}
+// 버퍼에서 "소리 큰 구간"만 찾기 → 파일 앞뒤 정적/멈춤 구간을 루프에서 제외
+function findLoudRegion(buffer) {
+  const data = buffer.getChannelData(0);
+  const sr = buffer.sampleRate;
+  const win = Math.max(1, Math.floor(sr * 0.02));   // 20ms 창 단위로 음량 측정
+  let peak = 0; const rms = [];
+  for (let i = 0; i < data.length; i += win) {
+    let sum = 0, n = 0;
+    for (let j = i; j < i + win && j < data.length; j++) { sum += data[j] * data[j]; n++; }
+    const r = Math.sqrt(sum / n); rms.push(r);
+    if (r > peak) peak = r;
+  }
+  const thr = peak * 0.22;                            // 피크의 22% 이상 = "들리는 구간"
+  let a = 0, b = rms.length - 1;
+  while (a < rms.length && rms[a] < thr) a++;
+  while (b > a && rms[b] < thr) b--;
+  return { start: (a * win) / sr, end: ((b + 1) * win) / sr };
+}
+function startDrill() {                  // 버퍼는 한 번만 start, 이후 gain으로 음량 제어
+  if (drillStarted || !drillBuffer || !audioCtx) return;
+  drillSrc = audioCtx.createBufferSource();
+  drillSrc.buffer = drillBuffer;
+  drillSrc.loop = true;
+  try {
+    const { start, end } = findLoudRegion(drillBuffer);
+    // 머리/꼬리 정적만 잘라 그 구간을 루프. 감지가 이상하면 통째로 루프(무음 방지).
+    if (isFinite(start) && isFinite(end) && end - start > 0.3 && end <= drillBuffer.duration) {
+      drillSrc.loopStart = start;
+      drillSrc.loopEnd = end;
+    }
+  } catch (e) { /* 감지 실패 → 전체 루프 */ }
+  drillSrc.connect(drillGain);
+  drillSrc.start();                       // 항상 재생 시작 (무음 방지)
+  drillStarted = true;
+}
+// iOS·크롬 자동재생 정책: 첫 사용자 제스처에 컨텍스트 깨우고 시작
+function unlockAudio() {
+  initAudio();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  startDrill();
+}
+stage.addEventListener("pointerdown", unlockAudio);
+stage.addEventListener("wheel", unlockAudio, { passive: true });
+
+/* ============================================================
+   하단 미니 푸터 (main 양식) — hover로 메뉴, 섹션 클릭으로 1/3 패널.
+   ABOUT + SOUND 토글 + BACK TO BOX.
+   ============================================================ */
+const NAV_CONTENT = {
+  about: "2007년 Amazon Kindle이 처음 공개되던 시기, Amazon의 창립자 Jeff Bezos는 전자책을 단순히 종이책의 내용을 화면에 옮기는 기술로 보지 않았다. 그는 음악과 영상, 짧은 글은 이미 디지털 환경으로 옮겨졌지만, 책처럼 장시간 몰입해서 읽는 경험은 아직 충분히 디지털화되지 않았다고 보았다. 그에게 전자책은 오래된 매체인 책에 견줄 만큼 좋은 읽기 경험을 디지털 환경 안에서 새롭게 설계하는 문제였다.",
+};
+const footer = document.getElementById("site-footer");
+const footContent = document.getElementById("foot-content");
+let openSec = null;
+function openSection(btn){
+  const sec = btn.dataset.sec;
+  if (openSec===sec){ closeFooter(); return; }
+  openSec = sec;
+  footContent.innerHTML = "";
+  const h = document.createElement("h3"); h.textContent = btn.textContent.trim();
+  const p = document.createElement("p"); p.textContent = NAV_CONTENT[sec] || "";
+  footContent.append(h, p);
+  footer.classList.add("open");
+  footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.classList.toggle("active", b===btn));
+}
+function closeFooter(){
+  openSec=null; footer.classList.remove("open");
+  footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.classList.remove("active"));
+}
+footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.addEventListener("click", ()=>openSection(b)));
+addEventListener("keydown", e=>{ if(e.key==="Escape") closeFooter(); });
+
+// SOUND 토글 = 드릴 효과음 음소거 (예전 wave 버튼 대체)
+const soundBtn = document.getElementById("sound-btn");
+soundBtn.addEventListener("click", () => {
+  unlockAudio();
+  muted = !muted;
+  soundBtn.textContent = muted ? "SOUND: OFF" : "SOUND: ON";
+});
+
+/* 로더 숨김 — 대기할 비동기 자산이 없으므로 load 직후/짧은 타임아웃에 사라짐 */
+(function(){
+  const hide=()=>{ const l=document.getElementById("loader"); if(l) l.classList.add("gone"); };
+  addEventListener("load", hide); setTimeout(hide, 1200);
+})();
+</script>
+</body>
+</html>

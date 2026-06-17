@@ -1,0 +1,526 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>BOOKISHNESS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ffffff'/%3E%3Cg fill='none' stroke='%23231f20' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M16 7 C12 5 8 5 5 6 L5 25 C8 24 12 24 16 26 C20 24 24 24 27 25 L27 6 C24 5 20 5 16 7 Z'/%3E%3Cline x1='16' y1='7' x2='16' y2='26'/%3E%3C/g%3E%3C/svg%3E">
+
+<!-- 우측 정보 패널의 한글용 폰트 (Gothic A1). 개미·주스 그림엔 영향 없음. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1&display=swap" rel="stylesheet">
+
+<style>
+  /* ============================================================
+     스크린 책 100프로젝트 · 공통 규격(크롬) — main/index.html 양식
+     - 화면 전체가 캔버스. 뒤에 회색 3×3 dev-grid, 아래 미니 푸터.
+     ============================================================ */
+  :root {
+    --ink:#141414; --bg:#ffffff; --dim:#9a9a9a;
+    --pink:#ff5bd1; --pad:clamp(14px,1.6vw,30px);
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; background:var(--bg); }
+  body {
+    font-family:var(--mono);
+    color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:none;
+    -moz-osx-font-smoothing:grayscale; -webkit-font-smoothing:antialiased;
+  }
+
+  /* 주스 + 개미가 그려지는 캔버스. z-index 2 (그리드 위). */
+  #stage { position:fixed; inset:0; z-index:2; cursor:crosshair; }
+  #stage canvas { display:block; width:100%; height:100%; }
+
+  /* 첫 진입 안내 — 한 번 누르면(또는 잠시 뒤) 사라짐. 푸터 위로 띄움. */
+  #hint {
+    position:fixed; left:50%; bottom:64px; transform:translateX(-50%);
+    z-index:9; font-size:14px; color:var(--dim); letter-spacing:.04em;
+    transition:opacity .6s; pointer-events:none; text-align:center;
+    font-family:var(--mono);
+  }
+  #hint.gone { opacity:0; }
+
+  /* dev-grid (장식) — 캔버스 뒤 회색 3×3 라인 (main 양식). 클릭 통과 */
+  .dev-grid{position:fixed;inset:0;z-index:1;pointer-events:none}
+  .grid-inner{position:absolute;inset:0}
+  .gline{position:absolute;background:#dcdcdc;opacity:1}
+  .gv{top:0;bottom:0;width:1px;transform:translateX(-.5px)}
+  .gh{left:0;right:0;height:1px;transform:translateY(-.5px)}
+  .gv1{left:33.333%}.gv2{left:66.667%}.gh1{top:33.333%}.gh2{top:66.667%}
+
+  /* ---- 미니 푸터 (main/index.html 양식) ---- */
+  .site-footer{position:fixed;left:0;right:0;bottom:0;z-index:10;
+    background:var(--bg);border-top:1px solid var(--ink);touch-action:auto;
+    display:flex;flex-direction:column;
+    font-family:var(--mono);font-size:clamp(11px,.85vw,15px);letter-spacing:.06em}
+  .site-footer.open{height:33vh}
+  .foot-bar{padding:.75em var(--pad);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .foot-links{display:none;flex-direction:column;border-top:1px solid var(--ink)}
+  .site-footer:hover .foot-links,.site-footer.open .foot-links{display:flex}
+  .foot-link{font:inherit;letter-spacing:inherit;cursor:pointer;width:100%;
+    text-align:center;padding:.7em var(--pad);transition:background .15s;
+    border:none;background:0 0;color:inherit;text-decoration:none;display:block}
+  .foot-link + .foot-link{border-top:1px solid var(--ink)}
+  .foot-link:hover{background:#ededed}
+  .foot-title{cursor:default;letter-spacing:.12em}
+  .foot-title:hover{background:0 0}
+  .foot-copy{display:none}
+
+  /* 로더 — main 양식. */
+  #loader{position:fixed;inset:0;z-index:40;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:clamp(13px,1vw,18px);color:var(--ink);transition:opacity .6s}
+  #loader.gone{opacity:0;pointer-events:none}
+
+  @media (max-width:560px){
+    .site-footer.open{height:42vh}
+  }
+</style>
+</head>
+<body>
+
+<!-- 회색 3×3 dev-grid (장식, 캔버스 뒤) -->
+<div class="dev-grid" aria-hidden="true">
+  <div class="grid-inner">
+    <div class="gline gv gv1"></div><div class="gline gv gv2"></div>
+    <div class="gline gh gh1"></div><div class="gline gh gh2"></div>
+  </div>
+</div>
+
+<div id="hint">화면을 누르면 단물이 한 방울 더 떨어집니다 · 개미가 모여듭니다</div>
+
+<div id="stage"><canvas id="cv"></canvas></div>
+
+<!-- 미니 푸터 (main 양식) -->
+<footer class="site-footer" id="site-footer">
+  <div class="foot-bar">BOOKISHNESS /// 100 EXPERIMENTS IN READING ON SCREEN</div>
+  <nav class="foot-links">
+    <span class="foot-link foot-title">JUICY ~ SWEET ~ BOOK</span>
+    <a class="foot-link" href="../../main/index.html">← BACK TO BOX</a>
+  </nav>
+  <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
+</footer>
+
+<div id="loader">Loading Digital Fluxbox<br>⋯</div>
+
+<script>
+/* ============================================================
+   캔버스 셋업 (레티나 대응)
+   ============================================================ */
+const cv  = document.getElementById("cv");
+const ctx = cv.getContext("2d");
+const stage = document.getElementById("stage");
+const hint  = document.getElementById("hint");
+
+let W = 0, H = 0, DPR = 1;
+
+/* ============================================================
+   주스(꿀) 버퍼 — 'I ♥ BOOKS' 모양으로 흘린 단물.
+   글자 모양을 살짝 번지게(blur) 그려서 끈적한 시럽처럼 보이게 한다.
+   여기서 마스크를 떠서 개미가 따라다닐 가장자리(거리장)를 만든다.
+   ============================================================ */
+const juice = document.createElement("canvas");
+const jctx  = juice.getContext("2d");
+
+// 단물 색 (환타 오렌지)
+const AMBER      = "#ff6a00";                  // 주스 본체 — 쨍한 형광 오렌지
+const AMBER_DK   = "#c24e08";                  // 어두운 가장자리
+const AMBER_HI   = "#ffb04d";                  // 밝은 오렌지 (광택용)
+const SPECK_DK   = "rgba(150,55,5,0.55)";      // 어두운 알갱이/거품 점
+const SPECK_HI   = "rgba(255,220,150,0.65)";   // 밝은 알갱이/거품 점
+
+// 손가락으로 떨군 '여분의 방울'들 (x,y,r)
+const drops = [];
+
+/* 하트 path — 글자 'I' 와 'BOOKS' 사이의 ♥ 기호 */
+function heartPath(c, cx, cy, s){
+  // s = 하트 폭의 절반 정도 기준
+  c.beginPath();
+  c.moveTo(cx, cy + s*0.85);
+  c.bezierCurveTo(cx - s*1.15, cy - s*0.20, cx - s*0.55, cy - s*1.05, cx, cy - s*0.35);
+  c.bezierCurveTo(cx + s*0.55, cy - s*1.05, cx + s*1.15, cy - s*0.20, cx, cy + s*0.85);
+  c.closePath();
+}
+
+let layout = null;   // 'I ♥ BOOKS' 배치 정보 (resize 시 갱신)
+let LSP = 0;         // 글자 사이 간격 (blur 로 서로 붙는 걸 막아 또렷하게)
+
+const JFONT = '"Arial Black","Archivo Black",Arial,sans-serif';
+
+/* 자간을 준 문자열 너비 */
+function spacedWidth(c, str){
+  let w=0; for (const ch of str) w += c.measureText(ch).width + LSP;
+  return w - LSP;
+}
+/* 자간을 주며 글자 그리기 */
+function drawSpaced(c, str, x, baseline, stroke){
+  for (const ch of str){
+    if (stroke) c.strokeText(ch, x, baseline);
+    c.fillText(ch, x, baseline);
+    x += c.measureText(ch).width + LSP;
+  }
+}
+
+/* 토큰(글자/하트)을 차례대로 배치 → 가운데 정렬 */
+function computeLayout(){
+  const fs = Math.max(46, Math.min(W/8.2, H/3.2));   // 화면에 맞춘 글자 크기
+  LSP = fs*0.10;                                       // 자간 (글자 분리 유지)
+  jctx.font = `900 ${fs}px ${JFONT}`;
+  const gap = fs*0.30;
+  const wI     = spacedWidth(jctx, "I");
+  const wBooks = spacedWidth(jctx, "BOOKS");
+  const hW     = fs*0.92;                               // 하트 폭
+  const total  = wI + gap + hW + gap + wBooks;
+  let x = (W - total)/2;
+  const midY = H*0.50;                                 // 글자 시각 중심
+  const baseline = midY + fs*0.35;
+
+  const I     = { x, baseline };                 x += wI + gap;
+  const heart = { cx: x + hW/2, cy: midY, s: hW/2 }; x += hW + gap;
+  const BOOKS = { x, baseline };
+
+  layout = { fs, I, heart, BOOKS, midY };
+}
+
+/* 주스 모양을 jctx 에 그린다 (글자 + 하트 + 떨군 방울). color 채움. */
+function paintJuiceShapes(c, fill, stroke, lw){
+  const { fs, I, heart, BOOKS } = layout;
+  c.font = `900 ${fs}px ${JFONT}`;
+  c.textBaseline = "alphabetic";
+  c.fillStyle = fill;
+  c.lineJoin = "round"; c.lineCap = "round";
+  if (stroke){ c.strokeStyle = stroke; c.lineWidth = lw; }
+
+  // 'I'
+  drawSpaced(c, "I", I.x, I.baseline, stroke);
+  // '♥'
+  heartPath(c, heart.cx, heart.cy, heart.s);
+  if (stroke) c.stroke();
+  c.fill();
+  // 'BOOKS'
+  drawSpaced(c, "BOOKS", BOOKS.x, BOOKS.baseline, stroke);
+
+  // 손가락으로 떨군 여분의 단물 방울
+  for (const d of drops){
+    c.beginPath(); c.arc(d.x, d.y, d.r, 0, Math.PI*2);
+    if (stroke) c.stroke();
+    c.fill();
+  }
+}
+
+/* 전체 주스 버퍼 다시 그리기 — 끈적한 시럽 + 광택 + 알갱이(거품) */
+function renderJuice(){
+  juice.width = W*DPR; juice.height = H*DPR;
+  jctx.setTransform(DPR,0,0,DPR,0,0);
+  jctx.clearRect(0,0,W,H);
+
+  // 1) 끈적하게 번진 본체 (살짝 blur + 가는 round stroke 로 시럽처럼.
+  //    너무 두꺼우면 글자가 서로 붙어 안 읽힘 → 약하게.)
+  jctx.save();
+  jctx.filter = "blur(1.6px)";
+  paintJuiceShapes(jctx, AMBER, AMBER, layout.fs*0.05);
+  jctx.restore();
+
+  // 2) 가장자리 아래쪽 그림자(입체감) — 주스 위에만 (source-atop)
+  jctx.save();
+  jctx.globalCompositeOperation = "source-atop";
+  const g = jctx.createLinearGradient(0, layout.midY - layout.fs*0.6, 0, layout.midY + layout.fs*0.7);
+  g.addColorStop(0, "rgba(0,0,0,0)");
+  g.addColorStop(1, "rgba(140,40,4,0.35)");
+  jctx.fillStyle = g;
+  jctx.fillRect(0,0,W,H);
+
+  // 3) 윗면 광택 (밝은 호박색 하이라이트 띠)
+  const g2 = jctx.createLinearGradient(0, layout.midY - layout.fs*0.7, 0, layout.midY);
+  g2.addColorStop(0, "rgba(255,200,120,0.55)");
+  g2.addColorStop(1, "rgba(255,200,120,0)");
+  jctx.fillStyle = g2;
+  jctx.fillRect(0,0,W,H);
+
+  // 4) 작은 알갱이 — 단물 속 자잘한 점들 (밀도 높게). 주스 위에만 찍힘.
+  const grit = Math.round((W*H)/650);                  // 화면 넓이에 비례, 더 빽빽하게
+  for (let i=0;i<grit;i++){
+    const x = Math.random()*W, y = Math.random()*H;
+    const r = Math.random()*1.8 + 0.3;
+    jctx.beginPath(); jctx.arc(x,y,r,0,Math.PI*2);
+    jctx.fillStyle = Math.random()<0.5 ? SPECK_DK : SPECK_HI;
+    jctx.fill();
+  }
+
+  // 5) 탄산 기포 — 보글보글. 테두리(림) + 윗쪽 하이라이트로 진짜 거품처럼.
+  const bubbles = Math.round((W*H)/2600);              // 기포 개수 (넉넉하게)
+  for (let i=0;i<bubbles;i++){
+    const x = Math.random()*W, y = Math.random()*H;
+    const r = (Math.random()*4.5 + 1.5) * 0.4;        // 큰 기포 60% 축소
+    // 속(밝은 오렌지, 반투명)
+    jctx.beginPath(); jctx.arc(x,y,r,0,Math.PI*2);
+    jctx.fillStyle = "rgba(255,205,120,0.35)";
+    jctx.fill();
+    // 테두리(밝은 림)
+    jctx.beginPath(); jctx.arc(x,y,r,0,Math.PI*2);
+    jctx.lineWidth = Math.max(0.5, r*0.22);
+    jctx.strokeStyle = "rgba(255,235,190,0.75)";
+    jctx.stroke();
+    // 윗쪽 반짝임
+    jctx.beginPath(); jctx.arc(x - r*0.3, y - r*0.35, Math.max(0.5, r*0.28), 0, Math.PI*2);
+    jctx.fillStyle = "rgba(255,255,255,0.8)";
+    jctx.fill();
+  }
+  jctx.restore();
+
+  buildField();
+}
+
+/* ============================================================
+   거리장(distance field) — 개미가 따라다닐 '가장자리' 정보.
+   주스 안쪽은 음수, 바깥은 양수인 부호거리. 두 번의 chamfer 패스로 근사.
+   개미는 부호거리가 일정 값(가장자리 바로 바깥)이 되도록 끌린다.
+   ============================================================ */
+const CELL = 5;                 // 거리장 격자 한 칸 = 5px
+let gw=0, gh=0, sdf=null;       // signed distance, 격자 좌표계
+
+function chamfer(dist, gw, gh){
+  const INF = 1e9, A = 1, B = 1.41421356;
+  // forward
+  for (let y=0;y<gh;y++) for (let x=0;x<gw;x++){
+    const i=y*gw+x; let d=dist[i];
+    if (x>0)         d=Math.min(d, dist[i-1]+A);
+    if (y>0)         d=Math.min(d, dist[i-gw]+A);
+    if (x>0&&y>0)    d=Math.min(d, dist[i-gw-1]+B);
+    if (x<gw-1&&y>0) d=Math.min(d, dist[i-gw+1]+B);
+    dist[i]=d;
+  }
+  // backward
+  for (let y=gh-1;y>=0;y--) for (let x=gw-1;x>=0;x--){
+    const i=y*gw+x; let d=dist[i];
+    if (x<gw-1)        d=Math.min(d, dist[i+1]+A);
+    if (y<gh-1)        d=Math.min(d, dist[i+gw]+A);
+    if (x<gw-1&&y<gh-1)d=Math.min(d, dist[i+gw+1]+B);
+    if (x>0&&y<gh-1)   d=Math.min(d, dist[i+gw-1]+B);
+    dist[i]=d;
+  }
+}
+
+function buildField(){
+  gw = Math.ceil(W/CELL); gh = Math.ceil(H/CELL);
+  // 격자 칸 중심의 주스 여부를 알파값으로 판정
+  const img = jctx.getImageData(0,0,juice.width,juice.height).data;
+  const inside = new Uint8Array(gw*gh);
+  for (let y=0;y<gh;y++){
+    for (let x=0;x<gw;x++){
+      const px = Math.min(juice.width-1,  Math.floor((x*CELL+CELL/2)*DPR));
+      const py = Math.min(juice.height-1, Math.floor((y*CELL+CELL/2)*DPR));
+      inside[y*gw+x] = img[(py*juice.width+px)*4+3] > 90 ? 1 : 0;
+    }
+  }
+  const INF=1e9;
+  const outD=new Float32Array(gw*gh), inD=new Float32Array(gw*gh);
+  for (let i=0;i<gw*gh;i++){
+    outD[i]= inside[i]?0:INF;     // 바깥 거리: 주스=0
+    inD[i] = inside[i]?INF:0;     // 안쪽 거리: 배경=0
+  }
+  chamfer(outD,gw,gh); chamfer(inD,gw,gh);
+  sdf=new Float32Array(gw*gh);
+  for (let i=0;i<gw*gh;i++) sdf[i]= inside[i] ? -inD[i]*CELL : outD[i]*CELL;  // px 단위 부호거리
+}
+
+/* 부호거리 / 그라디언트(바깥 방향) 양선형 샘플 */
+function sampleSDF(px,py){
+  if (!sdf) return {d:9999, nx:0, ny:0};
+  const fx=px/CELL, fy=py/CELL;
+  const x0=Math.max(0,Math.min(gw-2,Math.floor(fx)));
+  const y0=Math.max(0,Math.min(gh-2,Math.floor(fy)));
+  const tx=Math.max(0,Math.min(1,fx-x0)), ty=Math.max(0,Math.min(1,fy-y0));
+  const i=y0*gw+x0;
+  const d00=sdf[i], d10=sdf[i+1], d01=sdf[i+gw], d11=sdf[i+gw+1];
+  const d = d00*(1-tx)*(1-ty)+d10*tx*(1-ty)+d01*(1-tx)*ty+d11*tx*ty;
+  // 그라디언트(부호거리가 커지는 = 주스에서 멀어지는 = 바깥 방향)
+  let gx=( (d10-d00)*(1-ty)+(d11-d01)*ty )/CELL;
+  let gy=( (d01-d00)*(1-tx)+(d11-d10)*tx )/CELL;
+  const m=Math.hypot(gx,gy)||1; gx/=m; gy/=m;
+  return {d, nx:gx, ny:gy};
+}
+
+/* ============================================================
+   개미 — 흰 여백을 헤매다 단물 가장자리로 모여 둘레를 기어다닌다.
+   부호거리가 REST(가장자리 바로 바깥)에 머물도록 법선 보정 + 가장자리 접선
+   방향으로 순환. 거기에 랜덤 방황을 섞어 살아있게.
+   ============================================================ */
+const ants = [];
+const REST = 3;     // 개미가 머물고 싶은 가장자리 바깥 거리(px)
+const BAND = 70;    // 이 거리 안쪽이면 단물 냄새를 맡고 끌린다
+
+function makeAnt(x,y){
+  return {
+    x, y,
+    a: Math.random()*Math.PI*2,         // 진행 방향
+    spd: 0.5 + Math.random()*0.5,        // 기본 속도
+    dir: Math.random()<0.5?1:-1,         // 가장자리 순환 방향
+    wob: Math.random()*Math.PI*2,        // 방황 위상
+    size: 4.6 + Math.random()*2.2,       // 개미 크기
+    gait: Math.random()*Math.PI*2,       // 다리 보행 위상
+    tint: Math.random()<0.5 ? "#3a2410" : "#2a1808"
+  };
+}
+
+function seedAnts(){
+  ants.length = 0;
+  const N = Math.round(Math.min(220, Math.max(120, (W*H)/9000)));
+  for (let i=0;i<N;i++){
+    // 절반은 글자 근처, 절반은 사방에 흩뿌림
+    if (Math.random()<0.55 && layout){
+      const ang=Math.random()*Math.PI*2, r=Math.min(W,H)*0.18*Math.random();
+      ants.push(makeAnt(W/2 + Math.cos(ang)*(W*0.22) + (Math.random()-0.5)*W*0.3,
+                        layout.midY + Math.sin(ang)*r));
+    } else {
+      ants.push(makeAnt(Math.random()*W, Math.random()*H));
+    }
+  }
+}
+
+function updateAnt(t, dt){
+  for (const ant of ants){
+    const s = sampleSDF(ant.x, ant.y);
+    // 법선(바깥) n, 접선 t (순환방향 dir)
+    const nx=s.nx, ny=s.ny;
+    const tx=-ny*ant.dir, ty=nx*ant.dir;
+
+    let dx=0, dy=0;
+    if (s.d < BAND){
+      // 단물 권역 안: 가장자리(REST)로 보정 + 둘레 따라 기어가기
+      const err = s.d - REST;                       // >0 너무 바깥, <0 안쪽
+      const corr = Math.max(-1, Math.min(1, -err/8)); // 안쪽이면 +n(바깥), 바깥이면 -n
+      dx = nx*corr*1.3 + tx*1.0;
+      dy = ny*corr*1.3 + ty*1.0;
+    } else {
+      // 멀리 있음: 가장 가까운 단물 쪽(-n)으로 약하게 끌리며 방황
+      dx = -nx*0.5; dy = -ny*0.5;
+    }
+    // 방황(랜덤 워크) — 살아있는 느낌
+    ant.wob += (Math.random()-0.5)*0.6;
+    const wob = 0.55;
+    dx += Math.cos(ant.wob)*wob; dy += Math.sin(ant.wob)*wob;
+
+    // 목표 방향으로 부드럽게 회전 (회전 속도 제한)
+    let desired = Math.atan2(dy, dx);
+    let diff = desired - ant.a;
+    while (diff> Math.PI) diff-=Math.PI*2;
+    while (diff<-Math.PI) diff+=Math.PI*2;
+    ant.a += Math.max(-0.32, Math.min(0.32, diff));
+
+    // 단물 위에서는 천천히 (멈춰서 먹는 느낌), 빈 종이에선 빨리
+    const onEdge = s.d < BAND;
+    const speed = ant.spd * (onEdge ? (0.55 + 0.25*Math.abs(Math.sin(t*0.003+ant.wob))) : 1.25);
+    ant.x += Math.cos(ant.a)*speed;
+    ant.y += Math.sin(ant.a)*speed;
+    ant.gait += speed*0.5 + 0.15;
+
+    // 화면 밖으로 나가면 반대편 가장자리에서 다시 들어오기(돌아다님 유지)
+    const m=20;
+    if (ant.x<-m) ant.x=W+m; else if (ant.x>W+m) ant.x=-m;
+    if (ant.y<-m) ant.y=H+m; else if (ant.y>H+m) ant.y=-m;
+  }
+}
+
+/* 개미 한 마리 그리기 (머리·가슴·배 + 다리6 + 더듬이2). +x 가 진행방향. */
+function drawAnt(c, ant){
+  const s = ant.size;
+  c.save();
+  c.translate(ant.x, ant.y);
+  c.rotate(ant.a);
+
+  // 옅은 그림자
+  c.fillStyle = "rgba(40,25,10,0.12)";
+  c.beginPath(); c.ellipse(-s*0.2, s*0.5, s*1.3, s*0.6, 0, 0, Math.PI*2); c.fill();
+
+  // 다리 (검은 가는 선, 보행에 따라 흔들림)
+  c.strokeStyle = ant.tint; c.lineWidth = Math.max(0.8, s*0.16); c.lineCap="round";
+  for (let k=0;k<3;k++){
+    const bx = (k-1)*s*0.5;                          // 가슴 부착점 x
+    const sw = Math.sin(ant.gait + k*1.7)*s*0.45;    // 앞뒤 스윙
+    for (const side of [-1,1]){
+      c.beginPath();
+      c.moveTo(bx, 0);
+      c.quadraticCurveTo(bx + sw + side*0, side*s*0.9, bx + sw, side*s*1.7);
+      c.stroke();
+    }
+  }
+
+  // 더듬이
+  c.beginPath();
+  c.moveTo(s*1.1, 0); c.quadraticCurveTo(s*2.0,-s*0.3, s*2.4,-s*0.9);
+  c.moveTo(s*1.1, 0); c.quadraticCurveTo(s*2.0, s*0.3, s*2.4, s*0.9);
+  c.stroke();
+
+  // 몸통 세 마디
+  c.fillStyle = ant.tint;
+  c.beginPath(); c.ellipse(-s*1.0, 0, s*0.95, s*0.78, 0, 0, Math.PI*2); c.fill(); // 배
+  c.beginPath(); c.ellipse( s*0.05,0, s*0.5,  s*0.45, 0, 0, Math.PI*2); c.fill(); // 가슴
+  c.beginPath(); c.ellipse( s*1.0, 0, s*0.55, s*0.5,  0, 0, Math.PI*2); c.fill(); // 머리
+
+  c.restore();
+}
+
+/* ============================================================
+   메인 루프
+   ============================================================ */
+let last = 0;
+function frame(t){
+  const dt = Math.min(40, t-last); last=t;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.clearRect(0,0,W,H);
+  // 주스(단물) 깔기
+  ctx.drawImage(juice, 0,0, W, H);
+  // 개미 갱신 + 그리기
+  updateAnt(t, dt);
+  for (const ant of ants) drawAnt(ctx, ant);
+  requestAnimationFrame(frame);
+}
+
+/* ============================================================
+   리사이즈 / 입력
+   ============================================================ */
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W*DPR; cv.height = H*DPR;
+  computeLayout();
+  renderJuice();
+  if (ants.length===0) seedAnts();
+}
+window.addEventListener("resize", resize);
+
+// 누르면 그 자리에 단물 한 방울 추가 → 개미가 모여든다
+function dropAt(x,y){
+  drops.push({ x, y, r: 14 + Math.random()*16 });
+  if (drops.length>40) drops.shift();
+  renderJuice();
+  // 근처 개미 몇 마리를 그쪽으로 살짝 끌어줌(빠른 반응)
+  hint.classList.add("gone");
+}
+stage.addEventListener("pointerdown", (e)=>{
+  const r = cv.getBoundingClientRect();
+  dropAt(e.clientX-r.left, e.clientY-r.top);
+});
+
+resize();
+requestAnimationFrame(frame);
+setTimeout(()=>hint.classList.add("gone"), 6000);
+
+/* ============================================================
+   하단 미니 푸터 (main 양식) — JUICY ~ SWEET ~ BOOK 타이틀만, 펼침 없음
+   ============================================================ */
+
+/* 로더 숨김 */
+(function(){
+  const hide=()=>{ const l=document.getElementById("loader"); if(l) l.classList.add("gone"); };
+  addEventListener("load", hide); setTimeout(hide, 1200);
+})();
+</script>
+</body>
+</html>

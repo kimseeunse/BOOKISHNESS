@@ -1,1 +1,10 @@
 .claude/
+
+# Dev backups & source originals — not needed to run the site
+models/backup/
+*.original.glb
+textures-source/_orig/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db

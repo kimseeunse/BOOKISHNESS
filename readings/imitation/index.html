@@ -1,0 +1,194 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>BOOKISHNESS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ffffff'/%3E%3Cg fill='none' stroke='%23231f20' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M16 7 C12 5 8 5 5 6 L5 25 C8 24 12 24 16 26 C20 24 24 24 27 25 L27 6 C24 5 20 5 16 7 Z'/%3E%3Cline x1='16' y1='7' x2='16' y2='26'/%3E%3C/g%3E%3C/svg%3E">
+
+<!-- 한글 본문용 폰트 (Gothic A1). main 양식 공유. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;500&display=swap" rel="stylesheet">
+
+<style>
+  /* ============================================================
+     스크린 책 100프로젝트 · 읽기방식: 모방 (imitation)
+     스크린이 종이책을 "모방"하는 6개의 웹 사례를 그리드로 보여준다.
+     - 각 칸은 해당 사이트의 미리보기. 클릭하면 새 탭으로 링크.
+     - 섹션은 ABOUT / BACK TO BOX 둘뿐.
+     - 이 페이지만 특별히 ABOUT이 처음부터 세로 1/3 지점에 펼쳐진 채 시작,
+       그리고 접을 수 없다(항상 열림).
+     크롬(dev-grid + 하단 푸터 + 로더)은 main/index.html 양식 공유.
+     ============================================================ */
+  :root{
+    --ink:#231f20; --bg:#ffffff; --dim:#9a9a9a; --pink:#ff5bd1;
+    --pad:clamp(14px,1.6vw,30px);
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+    --about-h:33vh;                 /* ABOUT 패널이 차지하는 세로 1/3 */
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%;overflow:hidden;background:var(--bg);
+    -moz-osx-font-smoothing:grayscale;-webkit-font-smoothing:antialiased}
+  body{font-family:var(--mono);color:var(--ink);
+    -webkit-tap-highlight-color:transparent}
+  button{border:none;background:0 0;color:inherit;font:inherit;cursor:pointer}
+
+  /* dev-grid (장식) — 그리드 뒤 회색 3×3 라인 (main 양식). 클릭 통과 */
+  .dev-grid{position:fixed;inset:0;z-index:1;pointer-events:none}
+  .grid-inner{position:absolute;inset:0}
+  .gline{position:absolute;background:#dcdcdc;opacity:1}
+  .gv{top:0;bottom:0;width:1px;transform:translateX(-.5px)}
+  .gh{left:0;right:0;height:1px;transform:translateY(-.5px)}
+  .gv1{left:33.333%}.gv2{left:66.667%}.gh1{top:33.333%}.gh2{top:66.667%}
+
+  /* ---- 6개 사이트 미리보기 그리드 ----
+     ABOUT이 항상 1/3을 먹으므로, 위쪽 2/3 영역에 3×2로 채운다. */
+  .previews{position:fixed;left:0;right:0;top:0;bottom:var(--about-h);z-index:3;
+    display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);
+    gap:0;padding:var(--pad)}
+  .cell{position:relative;display:block;text-decoration:none;color:inherit;
+    border:1px solid var(--ink);margin:-0.5px;overflow:hidden;background:var(--bg);
+    transition:box-shadow .15s}
+  .cell + .cell{}
+  .cell:hover{box-shadow:inset 0 0 0 2px var(--ink);z-index:2}
+  /* 미리보기 iframe — 비대화형 썸네일. 일부 사이트는 임베드를 막아 빈 칸일 수 있고,
+     그때도 라벨과 링크는 항상 동작한다. 살짝 축소해 페이지 윗부분을 넓게 보여줌. */
+  .thumb{position:absolute;inset:0 0 calc(1.8em + 2px) 0;overflow:hidden;
+    background:#f6f6f6;pointer-events:none}
+  .thumb iframe{position:absolute;top:0;left:0;width:200%;height:200%;border:0;
+    transform:scale(.5);transform-origin:top left;pointer-events:none;background:#fff}
+  .thumb .ph{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    color:var(--dim);font-size:clamp(10px,.8vw,13px);letter-spacing:.08em;text-align:center;padding:1em}
+  /* 도메인 라벨 — 항상 보임, 칸 하단에 고정 */
+  .label{position:absolute;left:0;right:0;bottom:0;height:calc(1.8em + 2px);
+    border-top:1px solid var(--ink);background:var(--bg);
+    display:flex;align-items:center;gap:.5em;padding:0 .7em;
+    font-size:clamp(10px,.8vw,13px);letter-spacing:.04em;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis}
+  .label .n{color:var(--dim)}
+  .label .d{overflow:hidden;text-overflow:ellipsis}
+  .label .go{margin-left:auto;color:var(--dim)}
+  .cell:hover .label{background:#ededed}
+
+  /* ---- 미니 푸터 (main 양식) ----
+     이 페이지는 처음부터 .open(ABOUT 펼침) 상태로 시작하고, 접히지 않는다. */
+  .site-footer{position:fixed;left:0;right:0;bottom:0;z-index:10;
+    background:var(--bg);border-top:1px solid var(--ink);
+    display:flex;flex-direction:column;height:var(--about-h);
+    font-family:var(--mono);font-size:clamp(11px,.85vw,15px);letter-spacing:.06em}
+  .foot-bar{padding:.75em var(--pad);text-align:center;white-space:nowrap;
+    overflow:hidden;text-overflow:ellipsis;flex:0 0 auto}
+  .foot-links{display:flex;flex-direction:column;border-top:1px solid var(--ink);flex:0 0 auto}
+  .foot-link{font:inherit;letter-spacing:inherit;cursor:pointer;width:100%;
+    text-align:center;padding:.7em var(--pad);transition:background .15s;
+    border:none;background:0 0;color:inherit;text-decoration:none;display:block}
+  .foot-link + .foot-link{border-top:1px solid var(--ink)}
+  .foot-link:hover{background:#ededed}
+  .foot-link.active{background:#ededed;cursor:default}
+  /* ABOUT 본문 패널 — 1/3 안에서 스크롤 */
+  .foot-panel{flex:1 1 auto;min-height:0;overflow-y:auto;
+    border-top:1px solid var(--ink);padding:1.2em var(--pad);text-align:left;line-height:1.8}
+  .foot-content{max-width:680px;margin:0 auto;opacity:.9;
+    font-family:"Gothic A1",var(--mono),sans-serif}
+  .foot-content p{margin:0 0 1.1em;font-size:clamp(13px,.95vw,16px)}
+  .foot-copy{flex:0 0 auto;text-align:center;border-top:1px solid var(--ink);
+    padding:.75em var(--pad);font-size:clamp(9px,.7vw,12px);opacity:.5;letter-spacing:.06em}
+
+  /* 로더 — main 양식. load 직후 사라짐. */
+  #loader{position:fixed;inset:0;z-index:40;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;text-align:center;
+    font-family:var(--mono);font-size:clamp(13px,1vw,18px);color:var(--ink);transition:opacity .6s}
+  #loader.gone{opacity:0;pointer-events:none}
+
+  /* ---- 폰: ABOUT을 조금 더 키우고 미리보기는 2열로 ---- */
+  @media (max-width:640px){
+    :root{--about-h:46vh}
+    .previews{grid-template-columns:repeat(2,1fr);grid-template-rows:repeat(3,1fr)}
+  }
+</style>
+</head>
+<body>
+
+<!-- 회색 3×3 dev-grid (장식) -->
+<div class="dev-grid" aria-hidden="true">
+  <div class="grid-inner">
+    <div class="gline gv gv1"></div><div class="gline gv gv2"></div>
+    <div class="gline gh gh1"></div><div class="gline gh gh2"></div>
+  </div>
+</div>
+
+<!-- 6개 사이트 미리보기 그리드. JS가 채운다(임베드 막힌 곳은 라벨만). -->
+<main class="previews" id="previews"></main>
+
+<!-- 미니 푸터 (main 양식) — 시작부터 ABOUT 펼침, 접히지 않음 -->
+<footer class="site-footer open" id="site-footer">
+  <div class="foot-bar">BOOKISHNESS /// 100 EXPERIMENTS IN READING ON SCREEN</div>
+  <nav class="foot-links">
+    <button class="foot-link active" data-sec="about">ABOUT</button>
+    <a class="foot-link" href="../../main/index.html">← BACK TO BOX</a>
+  </nav>
+  <div class="foot-panel"><div class="foot-content" id="foot-content"></div></div>
+  <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
+</footer>
+
+<div id="loader">Loading Digital Fluxbox<br>⋯</div>
+
+<script>
+/* ============================================================
+   6개 미리보기 카드 — 스크린이 책을 모방하는 웹 사례들.
+   클릭하면 새 탭으로 링크만 된다. (미리보기 iframe은 비대화형)
+   ============================================================ */
+const SITES = [
+  { url:"https://1docci.com/index_p.html" },
+  { url:"https://grafikdesigndenkensprechen.com/" },
+  { url:"https://chimeric-worlding.netlify.app/" },
+  { url:"https://www.withok.kr/web/library" },
+  { url:"https://boook.land/" },
+  { url:"https://ctl.werkplaatstypografie.org/" },
+];
+
+const wrap = document.getElementById("previews");
+SITES.forEach((s, i) => {
+  const host = (() => { try { return new URL(s.url).hostname.replace(/^www\./,""); } catch { return s.url; } })();
+  const a = document.createElement("a");
+  a.className = "cell";
+  a.href = s.url;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.innerHTML =
+    `<div class="thumb">
+       <div class="ph">${host}</div>
+       <iframe src="${s.url}" loading="lazy" tabindex="-1" scrolling="no"
+               referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin"></iframe>
+     </div>
+     <div class="label"><span class="n">${String(i+1).padStart(2,"0")}</span>
+       <span class="d">${host}</span><span class="go">↗</span></div>`;
+  wrap.appendChild(a);
+});
+
+/* ============================================================
+   ABOUT — 시작부터 펼쳐진 채(세로 1/3) 고정. 접히지 않는다.
+   본문 중간(페이지 넘김 문장 뒤)에 첨부 사진을 삽입.
+   ============================================================ */
+const ABOUT_HTML = `
+  <p>스크린 위의 책을 책답게 느끼게 만들고 싶을 때, 가장 자주 사용되는 방법은 책의 전형적인 형태를 모방하는 것이다.</p>
+  <p>가장 대표적인 예로는 전자책에서 페이지를 넘길 때 실제 종이가 넘어가는 듯한 효과를 삽입하는 방식을 들 수 있다.</p>
+  <p>또한 책을 펼쳤을 때 가운데에 생기는 제본의 골, 즉 gutter는 실제 종이책을 읽을 때에는 때로 방해가 되는 요소이지만, 책을 모방하려는 웹에서는 그라데이션이나 그림자 효과를 통해 의도적으로 만들어지기도 한다.</p>
+  <p>책의 부피감과 공간감 역시 스크린에서 종이책을 재현하고자 할 때 매력적으로 차용되는 요소다. 책등을 도미노처럼 나열하거나 책장에 꽂힌 형태로 보여줌으로써 책의 두께와 축적감을 암시하고, 일부러 축을 틀어 책 낱장이 가진 공간감을 재현하기도 한다.</p>
+  <p>이러한 모방이 흥미로운 이유는, 시각적으로는 책의 형태를 따르면서도 실제 작동 방식은 웹의 문법을 적극적으로 활용한다는 점에 있다. 출발점은 종이책의 형태이지만, 화면 위에서는 스크롤, 클릭, 이동, 확대와 같은 스크린 고유의 동작이 개입한다. 결국 이들은 책을 단순히 복제하는 것이 아니라, 책의 이미지를 빌려 웹 안에서 다시 작동시키는 사례라고 볼 수 있다.</p>
+`;
+document.getElementById("foot-content").innerHTML = ABOUT_HTML;
+
+// ABOUT 버튼은 활성 표시만 — 클릭해도 접히지 않는다(이 페이지는 항상 열림).
+document.querySelector('.foot-link[data-sec="about"]')
+  .addEventListener("click", e => e.preventDefault());
+
+/* 로더 숨김 — 대기할 비동기 자산이 없으므로 load 직후/짧은 타임아웃에 사라짐 */
+(function(){
+  const hide=()=>{ const l=document.getElementById("loader"); if(l) l.classList.add("gone"); };
+  addEventListener("load", hide); setTimeout(hide, 1200);
+})();
+</script>
+</body>
+</html>

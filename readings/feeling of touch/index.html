@@ -1,0 +1,419 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>BOOKISHNESS</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23ffffff'/%3E%3Cg fill='none' stroke='%23231f20' stroke-width='2' stroke-linejoin='round'%3E%3Cpath d='M16 7 C12 5 8 5 5 6 L5 25 C8 24 12 24 16 26 C20 24 24 24 27 25 L27 6 C24 5 20 5 16 7 Z'/%3E%3Cline x1='16' y1='7' x2='16' y2='26'/%3E%3C/g%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gothic+A1:wght@400;700;800&display=swap" rel="stylesheet">
+
+<style>
+  /* ============================================================
+     스크린 책 100프로젝트 · 읽기방식: 촉각의 감각 (feeling of touch)
+     매끈한 유리(스크린) 안에 책이 떠 있고, 손가락은 그 유리 표면을
+     끊임없이 어루만진다. 화면 속 책은 펼쳐지고 휘어지는 듯 보이지만,
+     손끝에 돌아오는 것은 언제나 같은 평평한 유리. 전자책 촉각성의 빈약함.
+       - 본문: George P. Landow / Alessandro Ludovico
+       - 모델: macbook.fbx · glass.glb(screen) · book.glb · hand.glb
+         (위치는 모델에 이미 구워져 있음 — 로드 후 그대로 배치)
+       - 손은 GLASS 표면의 접평면(tangent plane)을 따라 계속 쓰다듬는다.
+     크롬(grid + 하단 푸터 + 로더)은 main/index.html 양식을 공유.
+     ============================================================ */
+  @font-face {
+    font-family: 'JoseonGulim';
+    src: url('https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_20-04@1.0/ChosunGu.woff') format('woff');
+    font-weight: normal; font-display: swap;
+  }
+  :root {
+    --ink:#1b1b1b; --dim:#6a6a6a;
+    --bg:#e9e9ea;            /* 레퍼런스의 밝은 회색 스튜디오 배경 */
+    --pink:#a0ff34; --pad:clamp(14px,1.6vw,30px);
+    --sans:"Gothic A1",ui-sans-serif,system-ui,sans-serif;
+    --mono:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html, body { height:100%; overflow:hidden; background:var(--bg); }
+  body {
+    font-family:'JoseonGulim',"Apple SD Gothic Neo",serif; color:var(--ink);
+    -webkit-user-select:none; user-select:none;
+    -webkit-tap-highlight-color:transparent; touch-action:none;
+    -moz-osx-font-smoothing:grayscale; -webkit-font-smoothing:antialiased;
+  }
+  #scene { position:fixed; inset:0; display:block; z-index:2; }
+
+  /* 로딩 오버레이 */
+  #loading {
+    position:fixed; inset:0; z-index:30; background:var(--bg);
+    display:flex; align-items:center; justify-content:center;
+    transition:opacity .8s; font-family:var(--mono);
+    color:var(--dim); font-size:13px; letter-spacing:.08em;
+  }
+  #loading.hidden { opacity:0; pointer-events:none; }
+  #loading .dots i{display:inline-block;animation:bl 1.2s infinite}
+  #loading .dots i:nth-child(2){animation-delay:.2s}
+  #loading .dots i:nth-child(3){animation-delay:.4s}
+  @keyframes bl{0%,100%{opacity:.25}50%{opacity:1}}
+
+  /* dev-grid (장식) — 회색 3×3 라인 (main 양식). 클릭 통과 */
+  .dev-grid{position:fixed;inset:0;z-index:5;pointer-events:none;font-family:var(--mono)}
+  .grid-inner{position:absolute;inset:0}
+  .gline{position:absolute;background:#dcdcdc;opacity:1}
+  .gv{top:0;bottom:0;width:1px;transform:translateX(-.5px)}
+  .gh{left:0;right:0;height:1px;transform:translateY(-.5px)}
+  .gv1{left:33.333%}.gv2{left:66.667%}.gh1{top:33.333%}.gh2{top:66.667%}
+
+  /* ---- 미니 푸터 (main/index.html 양식) ---- */
+  .site-footer{position:fixed;left:0;right:0;bottom:0;z-index:10;
+    background:var(--bg);border-top:1px solid var(--ink);touch-action:auto;
+    display:flex;flex-direction:column;
+    font-family:var(--mono);font-size:clamp(11px,.85vw,15px);letter-spacing:.06em}
+  .site-footer.open{height:33vh}
+  .foot-bar{padding:.75em var(--pad);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .foot-links{display:none;flex-direction:column;border-top:1px solid var(--ink)}
+  .site-footer:hover .foot-links,.site-footer.open .foot-links{display:flex}
+  .foot-link{font:inherit;letter-spacing:inherit;cursor:pointer;width:100%;
+    text-align:center;padding:.7em var(--pad);transition:background .15s;
+    border:none;background:0 0;color:inherit;text-decoration:none;display:block}
+  .foot-link + .foot-link{border-top:1px solid var(--ink)}
+  .foot-link:hover,.foot-link.active{background:#ededed}
+  .foot-panel{display:none}
+  .site-footer.open .foot-panel{display:block;flex:1 1 auto;min-height:0;overflow-y:auto;
+    border-top:1px solid var(--ink);padding:1.2em var(--pad);text-align:left;line-height:1.7}
+  .foot-content{max-width:680px;margin:0 auto;opacity:.85;
+    font-family:var(--mono),"Gothic A1",sans-serif;
+    word-break:keep-all;overflow-wrap:break-word;hyphens:none}
+  .foot-content h3{font-size:clamp(13px,1vw,18px);letter-spacing:.1em;margin:0 0 .9em}
+  .foot-content p{margin:0 0 1em}
+  .foot-copy{display:none}
+  .site-footer.open .foot-copy{display:block;text-align:center;border-top:1px solid var(--ink);
+    padding:.75em var(--pad);font-size:clamp(9px,.7vw,12px);opacity:.5;letter-spacing:.06em}
+
+  /* 전체 로더 (main 양식) */
+  #loader{position:fixed;inset:0;z-index:40;background:var(--bg);
+    display:flex;align-items:center;justify-content:center;
+    font-family:var(--mono);font-size:clamp(13px,1vw,18px);color:var(--ink);transition:opacity .6s}
+  #loader.gone{opacity:0;pointer-events:none}
+
+  @media (max-width:560px){
+    .site-footer.open{height:42vh}
+  }
+</style>
+</head>
+<body>
+
+<div id="loading">Loading Digital Fluxbox<br>⋯</div>
+
+<canvas id="scene"></canvas>
+
+<!-- 회색 3×3 dev-grid (장식) -->
+<div class="dev-grid" aria-hidden="true">
+  <div class="grid-inner">
+    <div class="gline gv gv1"></div><div class="gline gv gv2"></div>
+    <div class="gline gh gh1"></div><div class="gline gh gh2"></div>
+  </div>
+</div>
+
+<!-- 미니 푸터 (main 양식) -->
+<footer class="site-footer" id="site-footer">
+  <div class="foot-bar">BOOKISHNESS /// 100 EXPERIMENTS IN READING ON SCREEN</div>
+  <nav class="foot-links">
+    <button class="foot-link" data-sec="about">ABOUT</button>
+    <a class="foot-link" href="../../main/index.html">← BACK TO BOX</a>
+  </nav>
+  <div class="foot-panel"><div class="foot-content" id="foot-content"></div></div>
+  <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
+</footer>
+
+<div id="loader">Loading Digital Fluxbox<br>⋯</div>
+
+<!-- three.js (ESM, CDN) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+
+/* ============================================================
+   CONFIG — 손 쓰다듬기 / 매크북 보정만 만지면 됩니다
+   ============================================================ */
+const CONFIG = {
+  models: {
+    macbook: "models/macbook.fbx",
+    glass:   "models/glass.glb",
+    book:    "models/book.glb",
+    hand:    "models/hand.glb",
+  },
+  // 매크북 FBX는 GLB(작은 단위)와 스케일이 다를 수 있어 보정값으로 맞춥니다.
+  macbookScale: 1,            // 로드 후 자동 측정해 GLB 스케일에 맞춰 덮어씁니다.
+  macbookAutoFit: true,
+
+  // 손이 유리 표면을 어루만지는 진폭/속도 (모델 단위 기준, ~0.4 폭)
+  stroke: {
+    ampU: 0.060,   // 화면 가로(좌우)로 쓸어내리는 폭
+    ampV: 0.040,   // 화면을 따라 위아래로 오르내리는 폭
+    ampN: 0.006,   // 표면을 누르는/떼는 미세한 깊이
+    speedU: 0.85,  // 가로 속도
+    speedV: 0.52,  // 세로 속도(가로와 달라야 8자/타원 궤적이 됨)
+    speedN: 1.7,   // 누르기 속도
+    tilt:  0.05,   // 쓰다듬는 결을 따라 손목이 살짝 기우는 정도(라디안)
+  },
+
+  skin: 0xe7c4a0,  // 팔/손 살색 (원하면 톤 조정)
+};
+
+/* ============================================================
+   렌더러 / 씬 / 카메라
+   ============================================================ */
+const canvas = document.getElementById("scene");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.15;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#e9e9ea");
+
+const camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.01, 100);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.enablePan = false;
+controls.enableZoom = false;     // 내장 줌 끄고 아래 커스텀 스무스 줌 사용
+controls.rotateSpeed = 0.7;
+
+// ── 커스텀 스무스 줌 ── 휠은 "목표 거리"만 바꾸고, 실제 카메라는 매 프레임 보간해 따라간다.
+let zoomDist = null, zoomMin = 1, zoomMax = 100;
+const ZOOM_STEP = 0.0011;  // 휠 민감도(↑ 빠름)
+const ZOOM_LERP = 0.08;    // 따라붙는 속도(↓ 더 부드럽고 길게)
+canvas.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  if (zoomDist == null) return;
+  zoomDist = Math.min(zoomMax, Math.max(zoomMin, zoomDist * Math.exp(e.deltaY * ZOOM_STEP)));
+}, { passive: false });
+const _zo = new THREE.Vector3();
+
+/* ============================================================
+   환경 / 조명 — 밝은 스튜디오. 유리가 반사할 "빛"을 만든다.
+   ============================================================ */
+const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
+(function studioEnv(){
+  const c = document.createElement("canvas"); c.width = 16; c.height = 128;
+  const g = c.getContext("2d");
+  const grad = g.createLinearGradient(0,0,0,128);
+  grad.addColorStop(0,"#ffffff"); grad.addColorStop(0.45,"#f1f1f2"); grad.addColorStop(1,"#cfcfd2");
+  g.fillStyle = grad; g.fillRect(0,0,16,128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.mapping = THREE.EquirectangularReflectionMapping;
+  scene.environment = pmrem.fromEquirectangular(tex).texture;
+  tex.dispose();
+})();
+scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+const key = new THREE.DirectionalLight(0xffffff, 2.0); key.position.set(2, 4, 3); scene.add(key);
+const fill = new THREE.DirectionalLight(0xeef0ff, 1.0); fill.position.set(-3, 1.5, 1); scene.add(fill);
+const rim = new THREE.DirectionalLight(0xffffff, 0.8); rim.position.set(0, 2, -4); scene.add(rim);
+
+/* ============================================================
+   로더 — 4개 모델을 모두 받고 나서 한 번에 배치/프레이밍
+   ============================================================ */
+const gltfLoader = new GLTFLoader();
+const fbxLoader = new FBXLoader();
+
+function loadGLTF(url){ return new Promise((res, rej) => gltfLoader.load(url, g => res(g.scene), undefined, rej)); }
+function loadFBX(url){ return new Promise((res, rej) => fbxLoader.load(url, res, undefined, rej)); }
+
+let handGroup = null, glassObj = null;
+const tanX = new THREE.Vector3(1,0,0);
+const tanY = new THREE.Vector3(0,1,0);
+const tanN = new THREE.Vector3(0,0,1);
+const handBase = new THREE.Vector3();
+const handBaseQuat = new THREE.Quaternion();
+
+function styleGlass(obj){
+  obj.traverse(o => {
+    if (!o.isMesh) return;
+    o.material = new THREE.MeshPhysicalMaterial({
+      color: 0xd7dadf, metalness: 0, roughness: 0.08,
+      transmission: 0.92, thickness: 0.4, ior: 1.45,
+      transparent: true, opacity: 0.5, depthWrite: false,
+      clearcoat: 1, clearcoatRoughness: 0.06, side: THREE.DoubleSide,
+    });
+    o.renderOrder = 2;   // 책/손 뒤에 그려 유리 너머로 비치게
+  });
+}
+
+function styleHand(obj){
+  obj.traverse(o => {
+    if (!o.isMesh) return;
+    o.material = new THREE.MeshStandardMaterial({
+      color: CONFIG.skin, metalness: 0, roughness: 0.62,
+    });
+  });
+}
+
+async function start(){
+  // GLB 3개 먼저 — 이게 뜨면 바로 씬 보여줌
+  const [glass, book, hand] = await Promise.all([
+    loadGLTF(CONFIG.models.glass),
+    loadGLTF(CONFIG.models.book),
+    loadGLTF(CONFIG.models.hand),
+  ]);
+
+  scene.add(glass, book, hand);
+  styleGlass(glass);
+  styleHand(hand);
+  handGroup = hand;
+  glassObj = glass.getObjectByName("screen") || glass;
+
+  const glbBox = new THREE.Box3().makeEmpty();
+  glbBox.expandByObject(glass); glbBox.expandByObject(book); glbBox.expandByObject(hand);
+  const glbSize = glbBox.getSize(new THREE.Vector3());
+  const glbCenter = glbBox.getCenter(new THREE.Vector3());
+
+  glassObj.updateWorldMatrix(true, false);
+  const q = glassObj.getWorldQuaternion(new THREE.Quaternion());
+  tanX.set(1,0,0).applyQuaternion(q).normalize();
+  tanY.set(0,1,0).applyQuaternion(q).normalize();
+  tanN.set(0,0,1).applyQuaternion(q).normalize();
+  handGroup.getWorldPosition(handBase);
+  handGroup.getWorldQuaternion(handBaseQuat);
+
+  const focus = glassObj.getWorldPosition(new THREE.Vector3());
+  const radius = Math.max(glbSize.x, glbSize.y);
+  controls.target.copy(focus);
+  camera.position.copy(focus).add(new THREE.Vector3(radius*2.0, radius*1.0, radius*3.4));
+  controls.minDistance = radius * 1.2;
+  controls.maxDistance = radius * 12;
+  controls.update();
+  zoomMin = radius * 1.2;
+  zoomMax = radius * 12;
+  zoomDist = camera.position.distanceTo(controls.target);
+
+  document.getElementById("loading").classList.add("hidden");
+
+  // macbook.fbx는 8.9MB라 백그라운드에서 따로 받음 — 씬 표시 막지 않음
+  loadFBX(CONFIG.models.macbook).then(macbook => {
+    macbook.traverse(o => { if (o.isMesh){ o.castShadow = false; o.receiveShadow = false; } });
+    if (CONFIG.macbookAutoFit){
+      const mb = new THREE.Box3().setFromObject(macbook);
+      const ms = mb.getSize(new THREE.Vector3());
+      macbook.scale.setScalar((glbSize.x * 2.0) / Math.max(ms.x, 1e-4));
+    } else {
+      macbook.scale.setScalar(CONFIG.macbookScale);
+    }
+    const mb2 = new THREE.Box3().setFromObject(macbook);
+    const mc = mb2.getCenter(new THREE.Vector3());
+    const ms2 = mb2.getSize(new THREE.Vector3());
+    macbook.position.x += glbCenter.x - mc.x;
+    macbook.position.y += glbBox.min.y - mb2.min.y - glbSize.y * 0.14;
+    macbook.position.z += (glbCenter.z - mc.z) - ms2.z * 0.32;
+    scene.add(macbook);
+  }).catch(e => console.warn("macbook 로드 실패", e));
+}
+
+/* ============================================================
+   손이 유리를 어루만지는 루프 — fingertip은 접평면 위에 머문다
+   ============================================================ */
+const clock = new THREE.Clock();
+const _p = new THREE.Vector3();
+const _qWobble = new THREE.Quaternion();
+const _qTmp = new THREE.Quaternion();
+
+// 손이 유리 표면을 어루만지는 한 스텝 — 시간 t(초)에서의 손 위치/기울기 갱신
+function strokeUpdate(t){
+  if (!handGroup) return;
+  const S = CONFIG.stroke;
+  const u = Math.sin(t * S.speedU) * S.ampU;                 // 좌우
+  const v = Math.sin(t * S.speedV + 1.2) * S.ampV;          // 위아래(다른 주파수 → 타원/8자 궤적)
+  const n = (Math.sin(t * S.speedN) * 0.5 + 0.5) * S.ampN;  // 표면을 누르는 미세 깊이(항상 안쪽으로)
+
+  _p.copy(handBase)
+    .addScaledVector(tanX, u)
+    .addScaledVector(tanY, v)
+    .addScaledVector(tanN, -n);
+  handGroup.position.copy(_p);
+
+  // 쓰다듬는 결을 따라 손목이 살짝 기운다 (가로 이동 방향으로 롤)
+  const roll = Math.cos(t * S.speedU) * S.tilt;
+  _qWobble.setFromAxisAngle(tanN, roll);
+  _qTmp.copy(_qWobble).multiply(handBaseQuat);
+  handGroup.quaternion.copy(_qTmp);
+}
+function animate(){
+  requestAnimationFrame(animate);
+  strokeUpdate(clock.getElapsedTime());
+
+  // 스무스 줌: 현재 카메라 거리를 목표 거리로 매 프레임 보간 (update 전에 적용)
+  if (zoomDist != null){
+    _zo.copy(camera.position).sub(controls.target);
+    const d = _zo.length();
+    if (Math.abs(zoomDist - d) > 1e-5){
+      _zo.setLength(d + (zoomDist - d) * ZOOM_LERP);
+      camera.position.copy(controls.target).add(_zo);
+    }
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ============================================================
+   하단 미니 푸터 (main 양식)
+   ============================================================ */
+const NAV_CONTENT = {
+  about: "George P. Landow는 『Hyper/Text/Theory』에서 \"촉각적인 것에서 디지털로의 이동은 현대 세계의 주요한 요소\"이라고 보았다. 이 말은 출판과 독서가 물리적 대상에서 디지털 환경으로 옮겨가는 변화를 설명한다. 그러나 디지털로의 이동이 곧 촉각의 사라짐을 의미하지는 않는다.\n\nAlessandro Ludovico는 『Post-Digital Print』에서, 스크린 기반의 휘발적인 콘텐츠가 늘어날수록 오히려 촉각성은 더 생생하고 즐거운 경험으로 다시 요청된다고 설명한다. 디지털 콘텐츠가 손에 잡히지 않고 쉽게 사라질수록, 우리는 그것을 다시 몸과 연결해줄 감각을 찾게 된다.\n\n전자책은 대개 페이지 넘김, 책의 두께, 종이의 질감 같은 촉각적 경험을 시각적으로 모방하는 형태를 띤다. 그러나 사용자의 손이 실제로 만지게 되는 것은 종이가 아니라 매끄러운 유리 표면이다. 화면 속 책은 접히고 휘어지는 것처럼 보이지만, 손끝에 돌아오는 감각은 언제나 동일한 스크린의 평평함이다.\n\n이 간극은 전자책의 촉각성이 왜 자주 빈약하게 느껴지는지를 보여준다. 디지털 독서는 책의 촉각적 결함을 시각적으로 보충하고자 노력하지만, 그 감각을 물리적으로 되돌려주지는 못한다.",
+};
+const footer = document.getElementById("site-footer");
+const footContent = document.getElementById("foot-content");
+let openSec = null;
+function openSection(btn){
+  const sec = btn.dataset.sec;
+  if (openSec===sec){ closeFooter(); return; }
+  openSec = sec;
+  footContent.innerHTML = "";
+  (NAV_CONTENT[sec] || "").split("\n\n").forEach(para => {
+    const p = document.createElement("p"); p.textContent = para;
+    footContent.append(p);
+  });
+  footer.classList.add("open");
+  footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.classList.toggle("active", b===btn));
+}
+function closeFooter(){
+  openSec=null; footer.classList.remove("open");
+  footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.classList.remove("active"));
+}
+footer.querySelectorAll(".foot-link[data-sec]").forEach(b=>b.addEventListener("click", ()=>openSection(b)));
+addEventListener("keydown", e=>{ if(e.key==="Escape") closeFooter(); });
+
+/* 로더 숨김 */
+(function(){
+  const hide=()=>{ const l=document.getElementById("loader"); if(l) l.classList.add("gone"); };
+  addEventListener("load", hide); setTimeout(hide, 1200);
+})();
+
+start();
+</script>
+</body>
+</html>
