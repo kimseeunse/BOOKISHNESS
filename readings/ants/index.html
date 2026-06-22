@@ -76,6 +76,13 @@
     display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-size:clamp(13px,1vw,18px);color:var(--ink);transition:opacity .6s}
   #loader.gone{opacity:0;pointer-events:none}
+  #loader .ll{display:inline-block;animation:fxwave 1.3s ease-in-out infinite,fxhue 2.5s infinite;
+    animation-delay:calc(var(--i)*-.09s),calc(var(--i)*-.5s);will-change:transform}
+  #loader .ll.sp{animation:fxwave 1.3s ease-in-out infinite;animation-delay:calc(var(--i)*-.09s)}
+  @keyframes fxwave{0%,100%{transform:translateY(.32em)}50%{transform:translateY(-.32em)}}
+  @keyframes fxhue{
+    0%,19.9%{color:#b6ff66}  20%,39.9%{color:#6ec9ff} 40%,59.9%{color:#ff9d4e}
+    60%,79.9%{color:#ff7bc4} 80%,100%{color:#b08bff}}
 
   @media (max-width:560px){
     .site-footer.open{height:42vh}
@@ -106,7 +113,8 @@
   <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
 </footer>
 
-<div id="loader">Loading Digital Fluxbox<br>⋯</div>
+<div id="loader" aria-label="Loading Digital Fluxbox"></div>
+<script>(function(){var el=document.getElementById('loader'),t='Loading Digital Fluxbox';for(var i=0;i<t.length;i++){var c=t.charAt(i),s=document.createElement('span');s.className='ll'+(c===' '?' sp':'');s.style.setProperty('--i',i);if(c===' ')s.innerHTML='&nbsp;';else s.textContent=c;el.appendChild(s);}})();</script>
 
 <script>
 /* ============================================================
@@ -354,6 +362,9 @@ function sampleSDF(px,py){
 const ants = [];
 const REST = 3;     // 개미가 머물고 싶은 가장자리 바깥 거리(px)
 const BAND = 70;    // 이 거리 안쪽이면 단물 냄새를 맡고 끌린다
+const RECRUIT     = 0.5;  // 방울 바로 옆 개미가 '출동'할 확률 (멀수록 급격히 줄어듦)
+const RECRUIT_MAX = 14;   // 방울 하나당 최대 출동 개미 수 — 새 방울에 과하게 쏠리지 않게
+const RECRUIT_REACH = 0.55; // 반응 사정거리(화면 짧은 변 대비 비율). 이 거리쯤이면 반응 0에 수렴
 
 function makeAnt(x,y){
   return {
@@ -364,16 +375,17 @@ function makeAnt(x,y){
     wob: Math.random()*Math.PI*2,        // 방황 위상
     size: 4.6 + Math.random()*2.2,       // 개미 크기
     gait: Math.random()*Math.PI*2,       // 다리 보행 위상
-    tint: Math.random()<0.5 ? "#3a2410" : "#2a1808"
+    tint: Math.random()<0.5 ? "#3a2410" : "#2a1808",
+    target: null                         // '출동' 중인 단물 방울 (없으면 평소 행동)
   };
 }
 
 function seedAnts(){
   ants.length = 0;
-  const N = Math.round(Math.min(220, Math.max(120, (W*H)/9000)));
+  const N = Math.round(Math.min(380, Math.max(220, (W*H)/4500)));
   for (let i=0;i<N;i++){
-    // 절반은 글자 근처, 절반은 사방에 흩뿌림
-    if (Math.random()<0.55 && layout){
+    // 대부분은 글자 근처, 일부는 사방에 흩뿌림
+    if (Math.random()<0.7 && layout){
       const ang=Math.random()*Math.PI*2, r=Math.min(W,H)*0.18*Math.random();
       ants.push(makeAnt(W/2 + Math.cos(ang)*(W*0.22) + (Math.random()-0.5)*W*0.3,
                         layout.midY + Math.sin(ang)*r));
@@ -385,6 +397,32 @@ function seedAnts(){
 
 function updateAnt(t, dt){
   for (const ant of ants){
+    // ── '출동' 중인 개미: 가장자리 순환을 무시하고 떨군 방울로 곧장 간다 ──
+    // (개미 대부분이 가운데 큰 글자의 권역에 묶여 있어, 약한 인력만으론 글자에서
+    //  떨어져 나오질 못한다. 그래서 방울을 떨굴 때 일부 개미에게 목표를 박아
+    //  멀리서도 줄지어 모여들게 한다.)
+    if (ant.target){
+      if (drops.indexOf(ant.target) < 0){ ant.target = null; }   // 방울이 사라짐 → 해제
+      else {
+        const tdx = ant.target.x - ant.x, tdy = ant.target.y - ant.y;
+        const td = Math.hypot(tdx, tdy);
+        if (td < ant.target.r + 8){ ant.target = null; }          // 도착 → 평소 행동(둘레 순환) 재개
+        else {
+          ant.wob += (Math.random()-0.5)*0.6;                     // 살아있는 흔들림
+          const dx = tdx/td*1.6 + Math.cos(ant.wob)*0.4;
+          const dy = tdy/td*1.6 + Math.sin(ant.wob)*0.4;
+          let diff = Math.atan2(dy,dx) - ant.a;
+          while (diff> Math.PI) diff-=Math.PI*2;
+          while (diff<-Math.PI) diff+=Math.PI*2;
+          ant.a += Math.max(-0.32, Math.min(0.32, diff));
+          const speed = ant.spd*1.5;                              // 빈 종이를 가로지르듯 빠르게
+          ant.x += Math.cos(ant.a)*speed;
+          ant.y += Math.sin(ant.a)*speed;
+          ant.gait += speed*0.28 + 0.07;
+          continue;
+        }
+      }
+    }
     const s = sampleSDF(ant.x, ant.y);
     // 법선(바깥) n, 접선 t (순환방향 dir)
     const nx=s.nx, ny=s.ny;
@@ -418,7 +456,7 @@ function updateAnt(t, dt){
     const speed = ant.spd * (onEdge ? (0.55 + 0.25*Math.abs(Math.sin(t*0.003+ant.wob))) : 1.25);
     ant.x += Math.cos(ant.a)*speed;
     ant.y += Math.sin(ant.a)*speed;
-    ant.gait += speed*0.5 + 0.15;
+    ant.gait += speed*0.28 + 0.07;
 
     // 화면 밖으로 나가면 반대편 가장자리에서 다시 들어오기(돌아다님 유지)
     const m=20;
@@ -436,12 +474,14 @@ function drawAnt(c, ant){
 
   // 옅은 그림자
   c.fillStyle = "rgba(40,25,10,0.12)";
-  c.beginPath(); c.ellipse(-s*0.2, s*0.5, s*1.3, s*0.6, 0, 0, Math.PI*2); c.fill();
+  c.beginPath(); c.ellipse(-s*0.2, s*0.5, s*1.7, s*0.5, 0, 0, Math.PI*2); c.fill();
 
   // 다리 (검은 가는 선, 보행에 따라 흔들림)
+  // 부착점: 앞다리=가슴 앞, 가운데=가슴, 뒷다리=배 위 (러브버그처럼 가슴에만 몰리지 않게)
   c.strokeStyle = ant.tint; c.lineWidth = Math.max(0.8, s*0.16); c.lineCap="round";
+  const legX = [s*0.55, s*0.0, -s*1.0];
   for (let k=0;k<3;k++){
-    const bx = (k-1)*s*0.5;                          // 가슴 부착점 x
+    const bx = legX[k];                              // 부착점 x
     const sw = Math.sin(ant.gait + k*1.7)*s*0.45;    // 앞뒤 스윙
     for (const side of [-1,1]){
       c.beginPath();
@@ -453,15 +493,15 @@ function drawAnt(c, ant){
 
   // 더듬이
   c.beginPath();
-  c.moveTo(s*1.1, 0); c.quadraticCurveTo(s*2.0,-s*0.3, s*2.4,-s*0.9);
-  c.moveTo(s*1.1, 0); c.quadraticCurveTo(s*2.0, s*0.3, s*2.4, s*0.9);
+  c.moveTo(s*1.6, 0); c.quadraticCurveTo(s*2.4,-s*0.3, s*2.8,-s*0.9);
+  c.moveTo(s*1.6, 0); c.quadraticCurveTo(s*2.4, s*0.3, s*2.8, s*0.9);
   c.stroke();
 
-  // 몸통 세 마디
+  // 몸통 세 마디 — 배는 크고 둥글게, 가슴은 가늘게, 머리는 또렷하게
   c.fillStyle = ant.tint;
-  c.beginPath(); c.ellipse(-s*1.0, 0, s*0.95, s*0.78, 0, 0, Math.PI*2); c.fill(); // 배
-  c.beginPath(); c.ellipse( s*0.05,0, s*0.5,  s*0.45, 0, 0, Math.PI*2); c.fill(); // 가슴
-  c.beginPath(); c.ellipse( s*1.0, 0, s*0.55, s*0.5,  0, 0, Math.PI*2); c.fill(); // 머리
+  c.beginPath(); c.ellipse(-s*1.15, 0, s*1.1,  s*0.95, 0, 0, Math.PI*2); c.fill(); // 배
+  c.beginPath(); c.ellipse( s*0.15,0, s*0.7,  s*0.38, 0, 0, Math.PI*2); c.fill(); // 가슴
+  c.beginPath(); c.ellipse( s*1.3,  0, s*0.78, s*0.6,  0, 0, Math.PI*2); c.fill(); // 머리
 
   c.restore();
 }
@@ -497,10 +537,25 @@ window.addEventListener("resize", resize);
 
 // 누르면 그 자리에 단물 한 방울 추가 → 개미가 모여든다
 function dropAt(x,y){
-  drops.push({ x, y, r: 14 + Math.random()*16 });
-  if (drops.length>40) drops.shift();
+  const drop = { x, y, r: 14 + Math.random()*16 };
+  drops.push(drop);
+  if (drops.length>40){
+    const gone = drops.shift();
+    for (const ant of ants) if (ant.target===gone) ant.target=null;  // 사라진 방울 목표 해제
+  }
   renderJuice();
-  // 근처 개미 몇 마리를 그쪽으로 살짝 끌어줌(빠른 반응)
+  // 개미를 그 방울로 불러모은다 — 가까운 개미일수록 잘 반응하고, 최대 RECRUIT_MAX
+  // 마리만 출동한다. (예전엔 거리 무관하게 전체의 절반이 쏠려 너무 민감했다.)
+  // 가까운 순서대로 보며 확률 판정 → 멀리 떨군 방울이라도 '근처 몇 마리'는 온다.
+  const reach = Math.min(W,H)*RECRUIT_REACH;
+  const order = ants.map(a=>({a, d:Math.hypot(a.x-x, a.y-y)})).sort((p,q)=>p.d-q.d);
+  let recruited = 0;
+  for (const {a,d} of order){
+    if (recruited >= RECRUIT_MAX) break;
+    if (a.target) continue;                              // 이미 다른 방울로 가는 중이면 둠
+    const p = RECRUIT * Math.max(0, 1 - d/reach);        // 가까울수록 높고, reach 밖이면 0
+    if (Math.random() < p){ a.target = drop; recruited++; }
+  }
   hint.classList.add("gone");
 }
 stage.addEventListener("pointerdown", (e)=>{
@@ -522,5 +577,6 @@ setTimeout(()=>hint.classList.add("gone"), 6000);
   addEventListener("load", hide); setTimeout(hide, 1200);
 })();
 </script>
+
 </body>
 </html>

@@ -84,6 +84,13 @@
   #loader{position:fixed;inset:0;z-index:40;background:var(--bg);
     display:flex;align-items:center;justify-content:center;font-size:clamp(13px,1vw,18px);transition:opacity .6s}
   #loader.gone{opacity:0;pointer-events:none}
+  #loader .ll{display:inline-block;animation:fxwave 1.3s ease-in-out infinite,fxhue 2.5s infinite;
+    animation-delay:calc(var(--i)*-.09s),calc(var(--i)*-.5s);will-change:transform}
+  #loader .ll.sp{animation:fxwave 1.3s ease-in-out infinite;animation-delay:calc(var(--i)*-.09s)}
+  @keyframes fxwave{0%,100%{transform:translateY(.32em)}50%{transform:translateY(-.32em)}}
+  @keyframes fxhue{
+    0%,19.9%{color:#b6ff66}  20%,39.9%{color:#6ec9ff} 40%,59.9%{color:#ff9d4e}
+    60%,79.9%{color:#ff7bc4} 80%,100%{color:#b08bff}}
 
   /* ---- phone: footer panel can take a little more height ---- */
   @media (max-width:560px){
@@ -115,14 +122,15 @@
     <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
   </footer>
 
-  <div id="loader">LOADING BOOKISHNESS …</div>
+  <div id="loader" aria-label="Loading Digital Fluxbox"></div>
+  <script>(function(){var el=document.getElementById('loader'),t='Loading Digital Fluxbox';for(var i=0;i<t.length;i++){var c=t.charAt(i),s=document.createElement('span');s.className='ll'+(c===' '?' sp':'');s.style.setProperty('--i',i);if(c===' ')s.innerHTML='&nbsp;';else s.textContent=c;el.appendChild(s);}})();</script>
 
 
 <script type="importmap">
   {
     "imports": {
-      "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      "three": "https://cdn.jsdelivr.net/npm/three@0.167.0/build/three.module.min.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.167.0/examples/jsm/"
     }
   }
   </script>
@@ -158,7 +166,11 @@
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.setClearColor(0x000000, 0);              // transparent — page bg + grid show through
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.35;              // nudged up toward the Painter viewport brightness
+  // Closed box matches the Painter viewport at 1.35. But opening the lid exposes the
+  // bright inner walls + items to the IBL, which washes the whole view out — so the
+  // open state drops to a lower exposure. toggleLid() animates between the two.
+  const EXPOSURE_CLOSED = 1.35, EXPOSURE_OPEN = 1.0;
+  renderer.toneMappingExposure = EXPOSURE_CLOSED;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
   const scene = new THREE.Scene();
@@ -184,11 +196,13 @@
   }, { passive: false });
 
   // Alt + 우클릭 드래그 → 줌 (위로 = 줌인, 아래로 = 줌아웃)
+  // Alt + 가운데(휠) 버튼 드래그 → 패닝 (OrbitControls 의 PAN 을 휠 버튼에 일시 할당)
   let _altHeld = false, _altDragActive = false, _altDragLastY = 0;
   window.addEventListener('keydown', e => {
     if (e.key === 'Alt' && !_altHeld) {
       _altHeld = true;
-      controls.mouseButtons.RIGHT = -1;  // OrbitControls 패닝 비활성화
+      controls.mouseButtons.RIGHT = -1;                  // 우클릭 줌은 직접 구현하므로 OrbitControls 비활성화
+      controls.mouseButtons.MIDDLE = THREE.MOUSE.PAN;    // Alt 누르는 동안만 휠 버튼 = 패닝
       e.preventDefault();
     }
   });
@@ -196,9 +210,11 @@
     if (e.key === 'Alt') {
       _altHeld = false; _altDragActive = false;
       controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+      controls.mouseButtons.MIDDLE = THREE.MOUSE.DOLLY;  // 기본값 복구(enableZoom=false 라 동작 없음)
     }
   });
   canvas.addEventListener('mousedown', e => {
+    if (e.button === 1 && _altHeld) e.preventDefault();  // 가운데 버튼 자동스크롤(autoscroll) 방지
     if (e.button === 2 && _altHeld) { _altDragActive = true; _altDragLastY = e.clientY; }
   });
   window.addEventListener('mousemove', e => {
@@ -236,6 +252,12 @@
     tex.dispose();
   });
 
+  // Spin the IBL around Y so the studio's bright softbox faces the TOP/FRONT of the
+  // box instead of pouring into the back. ↑ deg = rotate the bright zone clockwise
+  // (seen from above). Tweak this number to aim the glitter sparkle on the lid.
+  const ENV_ROT_DEG = 150;
+  scene.environmentRotation = new THREE.Euler(0, THREE.MathUtils.degToRad(ENV_ROT_DEG), 0);
+
   // EXR/IBL is the main light now — keep direct lights low so they don't pile on
   const key = new THREE.DirectionalLight(0xfff8f0, 0.6); key.position.set(3,5,2); scene.add(key);
   const fill = new THREE.DirectionalLight(0xf0f4ff, 0.3); fill.position.set(-3,1,-2); scene.add(fill);
@@ -252,7 +274,7 @@
   // (-1..1; ±1 = touching the wall, 0 = centered). Guarantees it never pokes out.
   const ITEMS = [
     { url: "../models/items/drill.glb", page: "../readings/drill/index.html", rawscale: 1.7, shift: { x: 0, z: -0.6 } },
-    { url: "../models/items/ants.glb",  page: "../readings/ants/index.html",  rawScale: 1.3, shift: { x: -0.2, z: 1, y: 0.3 } },
+    { url: "../models/items/ants.glb",  page: "../readings/ants/index.html",  rawScale: 1.3, shift: { x: -0.2, z: 1, y: 0.3 }, bobUp: true, noYaw: true },
     { url: "../models/items/flashlight.glb", page: "../readings/flashlight/index.html", rawScale: 1.1, shift: { x: 0.5, z: 0.7 } },
     { url: "../models/items/touch.glb",      page: "../readings/feeling of touch/index.html", material: "slime", rawScale: 1.15, shift: { x: -0.6, y: 0.05, z: 0.7 }, bobUp: true },
     // 카멜레온(모방/위장) → readings/imitation(모방 글). 손전등 위에 발을 얹은 채 얹힌다.
@@ -260,11 +282,12 @@
     // offset 으로 손전등 윗면 기준 미세 위치(박스 로컬 단위)를 잡는다. rot/offset 은 눈으로 보며 조정.
     { url: "../models/items/imitation.glb", page: "../readings/imitation/index.html",
       restOn: "flashlight", rawScale: 1.0,
-      rot: { x: 0.1, y: 2.26, z: 0 },        // 손전등 기둥에 발을 감고 머리를 든 자세(라디안)
+      rot: { x: 0.1, y: 2.31, z: 0 },        // 손전등 기둥에 발을 감고 머리를 든 자세(라디안)
       offset: { x: -0.02, y: -0.02, z: 0 } }, // 손전등 윗면 중심 기준 미세 이동(박스 로컬 단위).
       //  ↑ 혀·꼬리가 bbox를 키워 몸통이 옆/아래로 쏠리므로, y로 몸을 기둥 위로 올리고 x/z로 중심을 맞춤.
     // 라이터 → readings/lighter. 박스 뒤-왼쪽 바닥에 세워 둔다. rawScale 생략 → 박스 안에 자동 맞춤.
-    { url: "../models/items/lighter.glb", page: "../readings/lighter/index.html", rawScale: 1.1, shift: { x: 0.1, z: -0.4 } },
+    { url: "../models/items/lighter.glb", page: "../readings/lighter/index.html", rawScale: 1.3, shift: { x: 0.2, z: -0.3 },
+      rot: { x: 1.571, y: 0, z: 1 }, bobUp: true },
   ];
 
   // FILL: how much of the viewport the model occupies. Smaller = bigger model.
@@ -333,6 +356,7 @@
     if (lidGroup) lidClosedRot = lidGroup.rotation.z;
 
     tryPlaceItems();   // place any items that already finished loading
+    tryBindPostit();   // attach the lid post-it if it already loaded
 
     // frame camera to the model's bounding sphere
     fitRadius = 0.5 * Math.sqrt(size.x*size.x + size.y*size.y + size.z*size.z);
@@ -372,6 +396,68 @@
     );
   });
 
+  // ---- post-it notes stuck on the LID's inner face ----
+  // postit_tex_small.glb holds 6 handwritten notes (the user's design layout). As
+  // authored they sit on the lid's OUTER (glitter) face. We attach them to the lid,
+  // then flip the WHOLE cluster 180° about the lid's local Z (through the notes' anchor
+  // plane), which lands the SAME layout on the INNER face — upright text, hidden when
+  // closed, revealed when the lid opens — without disturbing the relative arrangement.
+  // A small clearance lifts the sheets off the surface so they aren't bisected by it.
+  const POSTIT_CLEARANCE = 0.02;   // lid-local units; raise if a note clips into the lid
+  let postitTex = null, postitBound = false;
+  itemLoader.load("../models/items/postit_tex_small.glb?v=1",
+    (gltf) => { postitTex = gltf.scene; tryBindPostit(); }, undefined,
+    (err) => console.warn("postit load skipped:", err));
+
+  // bounding box of an object expressed in the lid's local frame
+  function lidLocalBox(obj){
+    const inv = new THREE.Matrix4().copy(lidGroup.matrixWorld).invert();
+    const bb = new THREE.Box3(), v = new THREE.Vector3();
+    obj.updateWorldMatrix(true, true);
+    obj.traverse((o) => {
+      if (!o.isMesh) return;
+      o.updateWorldMatrix(true, false);
+      const g = o.geometry; if (!g.boundingBox) g.computeBoundingBox();
+      const b = g.boundingBox;
+      for (let i = 0; i < 8; i++){
+        v.set(i&1?b.max.x:b.min.x, i&2?b.max.y:b.min.y, i&4?b.max.z:b.min.z);
+        v.applyMatrix4(o.matrixWorld).applyMatrix4(inv);
+        bb.expandByPoint(v);
+      }
+    });
+    return bb;
+  }
+
+  function tryBindPostit(){
+    if (postitBound || !postitTex || !modelRoot || !lidGroup) return;
+    postitBound = true;
+    modelRoot.add(postitTex); lidGroup.attach(postitTex);   // outer face, its authored pose
+    lidGroup.updateWorldMatrix(true, true);
+    // flip 180° about lid-local Z, pivoting on the notes' anchor plane (bbox min Y),
+    // so the outer-face layout swings onto the inner face reading upright
+    const lb = lidLocalBox(postitTex);
+    const c = lb.getCenter(new THREE.Vector3());
+    const pivot = new THREE.Vector3(c.x, lb.min.y, c.z);
+    const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI);
+    postitTex.position.sub(pivot).applyQuaternion(q).add(pivot);
+    postitTex.quaternion.premultiply(q);
+    postitTex.position.y -= POSTIT_CLEARANCE;               // lift clear of the inner face
+    // draw both faces (the flip reverses winding) + sharpen textures + kill the baked AO
+    // shadow (the ORM occlusion channel darkens the notes otherwise)
+    const maxAniso = renderer.capabilities.getMaxAnisotropy();
+    postitTex.traverse((o) => {
+      if (!o.isMesh || !o.material) return;
+      for (const m of [].concat(o.material)) {
+        m.side = THREE.DoubleSide;
+        m.aoMapIntensity = 0;
+        m.needsUpdate = true;
+        for (const k of ["map","normalMap","roughnessMap","metalnessMap","emissiveMap","aoMap"]) {
+          if (m[k]) { m[k].anisotropy = maxAniso; m[k].needsUpdate = true; }
+        }
+      }
+    });
+  }
+
   // Fit each item inside the box footprint (never poking out) and rest it on the
   // floor. Items become children of modelRoot so they float WITH the box; the lid
   // is a separate child, so opening the lid leaves the items in the base.
@@ -392,7 +478,7 @@
         }
         it._placed = true;
         progressed = true;
-        const { obj: item, shift, scale: userScale, rawScale, rotY, rot, offset, material: matPreset, bobUp } = it;
+        const { obj: item, shift, scale: userScale, rawScale, rotY, rot, offset, material: matPreset, bobUp, noYaw } = it;
         const ib = new THREE.Box3().setFromObject(item);
         const isz = ib.getSize(new THREE.Vector3());
         const ic = ib.getCenter(new THREE.Vector3());
@@ -442,7 +528,8 @@
             cyCenter - ic.y*s,
             boxCenter.z - ic.z*s + slackZ*sz
           );
-          if (rotY != null) item.rotation.y = rotY;
+          if (rot) { item.rotation.set(rot.x||0, rot.y??rotY??0, rot.z||0); }
+          else if (rotY != null) item.rotation.y = rotY;
           // record placed footprint (box-local mesh center + scaled size) so other
           // items can perch on top of this one
           it.placedCenter = new THREE.Vector3(boxCenter.x + slackX*sx, cyCenter, boxCenter.z + slackZ*sz);
@@ -474,9 +561,30 @@
         item.userData.basePos = item.position.clone();
         item.userData.baseRotY = item.rotation.y;
         if (bobUp) item.userData.bobUp = true;
+        if (noYaw) item.userData.noYaw = true;   // suppress the hover swivel (옆으로 회전 끔)
         item.userData.bob = isz.y * s * 0.35;      // bob height when hovered (rel. to item size)
         item.userData.hover = 0;                   // eased 0..1 hover amount
         item.visible = true;                       // always visible, even when the box is closed
+
+        // Enlarge the clickable area for tiny items (the ants render only a few px
+        // wide, so a tap nearly always misses the mesh and nothing happens). An
+        // invisible, still-raycastable proxy box centered on the item gives a
+        // generous hit target without changing what's drawn. The raycaster skips
+        // visible:false objects, so we keep it visible but draw nothing
+        // (colorWrite:false, opacity:0). It's a child of the item, so it inherits
+        // the item's scale and rides along with the box float.
+        const worldHalf = Math.max(isz.x, isz.y, isz.z) * s * 0.5;
+        const MIN_HIT_HALF = 0.06;                 // ~12cm clickable box in world units
+        if (worldHalf < MIN_HIT_HALF) {
+          const localHalf = MIN_HIT_HALF / s;      // child inherits scale s → undo it here
+          const proxy = new THREE.Mesh(
+            new THREE.BoxGeometry(localHalf*2, localHalf*2, localHalf*2),
+            new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false })
+          );
+          proxy.position.copy(ic);                 // center on the item's geometry center
+          proxy.userData.isHitProxy = true;
+          item.add(proxy);
+        }
       });
     }
   }
@@ -519,10 +627,13 @@
     isAnimatingLid = true;
     const from = lidGroup.rotation.z;
     const to = isOpen ? lidClosedRot + CONFIG.lidOpenAngle : lidClosedRot;
+    const expFrom = renderer.toneMappingExposure;
+    const expTo = isOpen ? EXPOSURE_OPEN : EXPOSURE_CLOSED;
     const dur = 850, t0 = performance.now();
     (function step(now){
       const k = Math.min((now - t0)/dur, 1), e = 1 - Math.pow(1 - k, 3);
       lidGroup.rotation.z = from + (to - from)*e;
+      renderer.toneMappingExposure = expFrom + (expTo - expFrom)*e;
       if (k < 1) requestAnimationFrame(step); else isAnimatingLid = false;
     })(performance.now());
   }
@@ -536,6 +647,7 @@
     isOpen = false;
     isAnimatingLid = false;
     lidGroup.rotation.z = lidClosedRot;
+    renderer.toneMappingExposure = EXPOSURE_CLOSED;
     hoveredObj = null;
   }
   addEventListener("pageshow", (e) => {
@@ -577,7 +689,8 @@
       const bobY = bobVal * obj.userData.bob * h;
       obj.position.y += bobY;
       it._currentBobY = bobY;
-      obj.rotation.y = (obj.userData.baseRotY || 0) + Math.sin(t*1.1) * 0.05 * h;
+      // noYaw → no hover swivel; the ant just jumps straight up, no sideways turn
+      obj.rotation.y = (obj.userData.baseRotY || 0) + (obj.userData.noYaw ? 0 : Math.sin(t*1.1) * 0.05 * h);
     });
     // pass 2: pivot items (restOn) — rise with target's bob + own hover on top
     loadedItems.forEach((it) => {
@@ -589,7 +702,8 @@
       const want = (obj === hoveredObj) ? 1 : 0;
       obj.userData.hover += (want - obj.userData.hover) * 0.12;
       const h = obj.userData.hover;
-      it.pivot.position.y += Math.sin(t*1.8) * obj.userData.bob * h;
+      // abs() → bob only UPWARD from the resting pose, never dipping below it
+      it.pivot.position.y += Math.abs(Math.sin(t*1.8)) * obj.userData.bob * h;
       obj.rotation.y = (obj.userData.baseRotY || 0) + Math.sin(t*1.1) * 0.05 * h;
     });
     controls.update();
@@ -604,7 +718,7 @@
       <p>BOOKISHNESS is a box. Inside it are objects — and each object is one of 100 experiments in what it means to read on a screen.</p>
       <ol>
         <li><b>Open the box.</b> Click the lid to lift it open. Click it again to close.</li>
-        <li><b>Look around.</b> Drag anywhere to orbit the box; scroll or pinch to zoom in and out.</li>
+        <li><b>Look around.</b> Drag anywhere to orbit the box; scroll or pinch to zoom in and out; hold <span class="by">Alt</span> and drag the middle (wheel) button to pan.</li>
         <li><b>Choose an object.</b> Objects rest inside the open box and lift slightly when you hover them. Click one to enter its reading.</li>
         <li><b>Read it.</b> Every experiment asks you to read differently — turning, scrolling, dragging, holding, waiting. Follow the on-screen hint to begin.</li>
         <li><b>Come back.</b> Inside any reading, use <span class="by">Back to Box</span> to return here and pick another.</li>

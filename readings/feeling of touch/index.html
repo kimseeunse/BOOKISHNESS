@@ -96,6 +96,13 @@
     display:flex;align-items:center;justify-content:center;
     font-family:var(--mono);font-size:clamp(13px,1vw,18px);color:var(--ink);transition:opacity .6s}
   #loader.gone{opacity:0;pointer-events:none}
+  #loader .ll{display:inline-block;animation:fxwave 1.3s ease-in-out infinite,fxhue 2.5s infinite;
+    animation-delay:calc(var(--i)*-.09s),calc(var(--i)*-.5s);will-change:transform}
+  #loader .ll.sp{animation:fxwave 1.3s ease-in-out infinite;animation-delay:calc(var(--i)*-.09s)}
+  @keyframes fxwave{0%,100%{transform:translateY(.32em)}50%{transform:translateY(-.32em)}}
+  @keyframes fxhue{
+    0%,19.9%{color:#b6ff66}  20%,39.9%{color:#6ec9ff} 40%,59.9%{color:#ff9d4e}
+    60%,79.9%{color:#ff7bc4} 80%,100%{color:#b08bff}}
 
   @media (max-width:560px){
     .site-footer.open{height:42vh}
@@ -127,7 +134,8 @@
   <div class="foot-copy">Bookishness © 2026 Seeun Kim. All rights reserved.</div>
 </footer>
 
-<div id="loader">Loading Digital Fluxbox<br>⋯</div>
+<div id="loader" aria-label="Loading Digital Fluxbox"></div>
+<script>(function(){var el=document.getElementById('loader'),t='Loading Digital Fluxbox';for(var i=0;i<t.length;i++){var c=t.charAt(i),s=document.createElement('span');s.className='ll'+(c===' '?' sp':'');s.style.setProperty('--i',i);if(c===' ')s.innerHTML='&nbsp;';else s.textContent=c;el.appendChild(s);}})();</script>
 
 <!-- three.js (ESM, CDN) -->
 <script type="importmap">
